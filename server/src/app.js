@@ -6,6 +6,9 @@ const express = require('express');
 const { config } = require('./config');
 const { parseTutorRequest } = require('./contracts/tutor');
 const {
+  createTutorPlan,
+} = require('./pedagogy/orchestrator');
+const {
   checkOllamaHealth,
   OllamaError,
 } = require('./services/ollama');
@@ -115,6 +118,20 @@ function createApp(options = {}) {
       storedHistory.length > 0
         ? storedHistory
         : requestData.recentMessages;
+    const learnerProfile =
+      conversationStore.getLearnerProfile(
+        requestData.studentId
+      );
+    const pedagogyPlan = createTutorPlan({
+      requestData,
+      history,
+      learnerProfile,
+    });
+    const enrichedRequestData = {
+      ...requestData,
+      pedagogyPlan,
+      learnerMemory: pedagogyPlan.relevantMemory,
+    };
 
     const studentMessage = conversationStore.saveMessage({
       conversationId: conversation.id,
@@ -126,15 +143,30 @@ function createApp(options = {}) {
     return {
       conversation,
       history,
+      learnerProfile,
+      pedagogyPlan,
+      requestData: enrichedRequestData,
       studentMessage,
     };
+  }
+
+  function recordLearning(context, learningTwin) {
+    return conversationStore.recordLearningTurn({
+      studentId: context.requestData.studentId,
+      studentName: context.requestData.studentName,
+      grade: context.requestData.grade,
+      language: context.requestData.language,
+      conversationId: context.conversation.id,
+      pedagogyPlan: context.pedagogyPlan,
+      learningTwin,
+    });
   }
 
   app.get('/', (request, response) => {
     response.json({
       status: 'online',
       service: 'Slickk Local Intelligence Core',
-      version: '3.0.0',
+      version: '4.0.0',
       provider: 'ollama',
       model: config.ollamaModel,
       storage: 'local-sqlite',
@@ -142,6 +174,9 @@ function createApp(options = {}) {
         'adaptive tutoring',
         'streaming responses',
         'persistent conversations',
+        'persistent learner profiles',
+        'subject-aware pedagogy',
+        'deterministic tutor orchestration',
         'multilingual teaching',
         'misconception detection',
         'guided quizzes',
@@ -184,6 +219,30 @@ function createApp(options = {}) {
       });
     }
   });
+
+  app.get(
+    '/api/students/:studentId/progress',
+    (request, response) => {
+      const studentId =
+        String(request.params.studentId || '').trim();
+
+      if (!studentId || studentId.length > 120) {
+        return response.status(400).json({
+          error: 'Please provide a valid student ID.',
+          code: 'INVALID_STUDENT_ID',
+          requestId: request.requestId,
+        });
+      }
+
+      return response.json({
+        profile:
+          conversationStore.getLearnerProfile(
+            studentId
+          ),
+        requestId: request.requestId,
+      });
+    }
+  );
 
   app.get('/api/conversations', (request, response) => {
     const studentId =
@@ -244,7 +303,7 @@ function createApp(options = {}) {
     try {
       const context = prepareConversation(parsedRequest.data);
       const { tutorResult, metrics } = await askTutor(
-        parsedRequest.data,
+        context.requestData,
         controller.signal,
         context.history
       );
@@ -258,6 +317,10 @@ function createApp(options = {}) {
           performance: metrics,
         },
       });
+      const learnerProfile = recordLearning(
+        context,
+        tutorResult
+      );
 
       return response.json({
         reply: tutorResult.reply,
@@ -269,12 +332,16 @@ function createApp(options = {}) {
           confidence: tutorResult.confidence,
           masteryDelta: tutorResult.masteryDelta,
         },
+        learnerProfile,
         metadata: {
           provider: 'ollama',
           model: config.ollamaModel,
           mode: parsedRequest.data.mode,
           language: parsedRequest.data.language,
           grade: parsedRequest.data.grade,
+          subject: context.pedagogyPlan.subject,
+          lessonState:
+            context.pedagogyPlan.lessonState,
           generatedAt: new Date().toISOString(),
           requestId: request.requestId,
           conversationId: context.conversation.id,
@@ -353,10 +420,13 @@ function createApp(options = {}) {
         requestId: request.requestId,
         conversationId: context.conversation.id,
         model: config.ollamaModel,
+        subject: context.pedagogyPlan.subject,
+        lessonState:
+          context.pedagogyPlan.lessonState,
       });
 
       const result = await streamTutor(
-        parsedRequest.data,
+        context.requestData,
         controller.signal,
         async (token) => {
           writeStreamEvent(response, {
@@ -368,7 +438,9 @@ function createApp(options = {}) {
       );
 
       const learningTwin =
-        buildStreamingLearningTwin(parsedRequest.data);
+        buildStreamingLearningTwin(
+          context.requestData
+        );
       const tutorMessage = conversationStore.saveMessage({
         conversationId: context.conversation.id,
         role: 'tutor',
@@ -379,6 +451,10 @@ function createApp(options = {}) {
           performance: result.metrics,
         },
       });
+      const learnerProfile = recordLearning(
+        context,
+        learningTwin
+      );
 
       writeStreamEvent(response, {
         type: 'complete',
@@ -386,10 +462,14 @@ function createApp(options = {}) {
         conversationId: context.conversation.id,
         messageId: tutorMessage.id,
         learningTwin,
+        learnerProfile,
         metadata: {
           provider: 'ollama',
           model: config.ollamaModel,
           requestId: request.requestId,
+          subject: context.pedagogyPlan.subject,
+          lessonState:
+            context.pedagogyPlan.lessonState,
           performance: result.metrics,
           generatedAt: new Date().toISOString(),
         },

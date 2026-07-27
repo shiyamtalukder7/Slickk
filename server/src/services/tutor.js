@@ -73,12 +73,20 @@ function buildStreamingLearningTwin(requestData) {
     explain: 'Concept clarification',
   };
 
+  const plan = requestData.pedagogyPlan || {};
+
   return {
-    topic: 'Current learning conversation',
+    topic:
+      plan.subject || 'Current learning conversation',
     skill: modeToSkill[requestData.mode] || 'Guided reasoning',
-    misconception: '',
-    nextAction: 'Respond to the tutor’s checking question.',
-    confidence: 0.5,
+    misconception: plan.signals?.confusion
+      ? 'The student reported confusion; the exact misconception still needs diagnosis.'
+      : '',
+    nextAction:
+      plan.lessonState === 'teach_back'
+        ? 'Demonstrate understanding with a small new example.'
+        : 'Respond to the tutor’s checking question.',
+    confidence: 0.35,
     masteryDelta: 0,
   };
 }

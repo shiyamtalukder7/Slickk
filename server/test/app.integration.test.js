@@ -203,6 +203,30 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
     conversationId
   );
   assert.equal(streamEvents.at(-1).type, 'complete');
+  assert.equal(
+    streamEvents[0].subject,
+    'Mathematics'
+  );
+  assert.equal(
+    streamEvents.at(-1).learnerProfile.totalTurns,
+    2
+  );
+
+  const progressResponse = await fetch(
+    `http://127.0.0.1:${gatewayPort}/api/students/local-student/progress`
+  );
+  const progress = await progressResponse.json();
+
+  assert.equal(progressResponse.status, 200);
+  assert.equal(progress.profile.totalTurns, 2);
+  assert.equal(
+    progress.profile.subjects[0].subjectKey,
+    'mathematics'
+  );
+  assert.equal(
+    progress.profile.subjects[0].turns,
+    2
+  );
 
   const messagesResponse = await fetch(
     `http://127.0.0.1:${gatewayPort}/api/conversations/${conversationId}/messages`

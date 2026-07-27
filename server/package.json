@@ -8,7 +8,7 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check index.js && node --check src/app.js && node --check src/config.js && node --check src/contracts/tutor.js && node --check src/prompts/tutor.js && node --check src/services/ollama.js && node --check src/services/tutor.js && node --check src/storage/conversations.js && node --test test/*.test.js"
+    "check": "node --check index.js && node --check src/app.js && node --check src/config.js && node --check src/contracts/tutor.js && node --check src/learning/mastery.js && node --check src/pedagogy/orchestrator.js && node --check src/prompts/tutor.js && node --check src/services/ollama.js && node --check src/services/tutor.js && node --check src/storage/conversations.js && node --test test/*.test.js"
   },
   "keywords": [
     "slickk",

@@ -27,6 +27,7 @@ const tutorRequestSchema = z.object({
   conversationId: z.string().uuid().optional(),
   grade: z.string().trim().min(1).max(80).default('General'),
   language: z.string().trim().min(1).max(50).default('English'),
+  subject: z.string().trim().min(1).max(80).default('Auto'),
   channel: z.enum(['typed', 'live']).default('typed'),
   mode: z.enum(tutorModes).default('adaptive'),
   recentMessages: z

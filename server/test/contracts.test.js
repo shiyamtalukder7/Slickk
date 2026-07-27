@@ -17,6 +17,7 @@ test('parseTutorRequest applies safe defaults', () => {
   assert.equal(result.data.mode, 'adaptive');
   assert.equal(result.data.language, 'English');
   assert.equal(result.data.studentId, 'local-student');
+  assert.equal(result.data.subject, 'Auto');
   assert.equal(result.data.channel, 'typed');
 });
 
