@@ -1,7 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Speech from 'expo-speech';
-import { getSlickkApiUrl } from '@/config/api';
+import {
+  streamTutorResponse,
+  TutorStreamError,
+} from '@/services/tutor-stream';
 import {
     ExpoSpeechRecognitionModule,
     useSpeechRecognitionEvent,
@@ -56,7 +59,7 @@ const STARTER_MESSAGES: Message[] = [
     id: 'live-welcome',
     role: 'tutor',
     text:
-      'Live Tutor is ready. Tap Start live session, then speak naturally. I will listen, answer and automatically listen again.',
+      'I am here with you. Tell me what you are learning and where it starts to feel difficult. I will help with one step, ask a quick question, and adapt to your answer.',
   },
 ];
 
@@ -70,13 +73,58 @@ function speechLanguage(text: string) {
     : 'en-US';
 }
 
-function splitSpeechText(
-  text: string,
-  maximumLength = 2800
-) {
-  const cleanText = text
+function prepareSpeechText(text: string) {
+  return text
+    .replace(
+      /```(?:[a-z0-9_-]+)?\s*([\s\S]*?)```/gi,
+      '$1'
+    )
+    .replace(
+      /!\[([^\]]*)\]\([^)]+\)/g,
+      '$1'
+    )
+    .replace(
+      /\[([^\]]+)\]\([^)]+\)/g,
+      '$1'
+    )
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(
+      /(\d|\))\s*[×*]\s*(?=\d|\()/g,
+      '$1 times '
+    )
+    .replace(
+      /(\d|\))\s*÷\s*(?=\d|\()/g,
+      '$1 divided by '
+    )
+    .replace(
+      /(\d|\))\s*\+\s*(?=\d|\()/g,
+      '$1 plus '
+    )
+    .replace(
+      /(\d|\))\s*=\s*(?=\d|\()/g,
+      '$1 equals '
+    )
+    .replace(
+      /^(\s*)[-+*]\s+/gm,
+      '$1'
+    )
+    .replace(
+      /^(\s*)#{1,6}\s*/gm,
+      '$1'
+    )
+    .replace(
+      /[*_~#]+/g,
+      ''
+    )
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function splitSpeechText(
+  text: string,
+  maximumLength = 240
+) {
+  const cleanText = prepareSpeechText(text);
 
   if (!cleanText) {
     return [];
@@ -151,7 +199,7 @@ function liveStateLabel(state: LiveState) {
       return 'Hearing your voice';
 
     case 'thinking':
-      return 'Slickk is thinking';
+      return 'Preparing your next step';
 
     case 'speaking':
       return 'Slickk is speaking';
@@ -187,7 +235,7 @@ export default function LiveTutorScreen() {
     useState<'en-US' | 'bn-BD'>('en-US');
 
   const [speechRate, setSpeechRate] =
-    useState(0.9);
+    useState(0.82);
 
   const [volumeLevel, setVolumeLevel] =
     useState(-2);
@@ -209,6 +257,10 @@ export default function LiveTutorScreen() {
   const processingRef = useRef(false);
   const speakingRef = useRef(false);
   const mountedRef = useRef(true);
+  const conversationIdRef =
+    useRef<string | undefined>(undefined);
+  const tutorRequestRef =
+    useRef<AbortController | null>(null);
   const restartTimerRef =
     useRef<ReturnType<
       typeof setTimeout
@@ -221,7 +273,7 @@ export default function LiveTutorScreen() {
     time: 0,
   });
 
-  const speechRateRef = useRef(0.9);
+  const speechRateRef = useRef(0.82);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -243,6 +295,7 @@ export default function LiveTutorScreen() {
   useEffect(() => {
     return () => {
       mountedRef.current = false;
+      tutorRequestRef.current?.abort();
 
       if (restartTimerRef.current) {
         clearTimeout(
@@ -285,6 +338,32 @@ export default function LiveTutorScreen() {
         ...currentMessages,
         newMessage,
       ];
+
+      messagesRef.current =
+        nextMessages;
+
+      return nextMessages;
+    });
+
+    scrollToBottom();
+
+    return newMessage.id;
+  };
+
+  const updateMessage = (
+    messageId: string,
+    text: string
+  ) => {
+    setMessages((currentMessages) => {
+      const nextMessages =
+        currentMessages.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                text,
+              }
+            : message
+        );
 
       messagesRef.current =
         nextMessages;
@@ -358,12 +437,14 @@ export default function LiveTutorScreen() {
       volume: 1,
 
       onDone: () => {
-        speakChunks(
-          chunks,
-          index + 1,
-          session,
-          language
-        );
+        setTimeout(() => {
+          speakChunks(
+            chunks,
+            index + 1,
+            session,
+            language
+          );
+        }, 220);
       },
 
       onStopped: () => {
@@ -404,10 +485,13 @@ export default function LiveTutorScreen() {
 
     await Speech.stop();
 
+    const speechText =
+      prepareSpeechText(text);
+
     const chunks = splitSpeechText(
-      text,
+      speechText,
       Math.min(
-        2800,
+        240,
         Speech.maxSpeechInputLength
       )
     );
@@ -429,7 +513,7 @@ export default function LiveTutorScreen() {
       chunks,
       0,
       currentSession,
-      speechLanguage(text)
+      speechLanguage(speechText)
     );
   };
 
@@ -532,6 +616,8 @@ export default function LiveTutorScreen() {
     setHandsFree(false);
     handsFreeRef.current = false;
     processingRef.current = false;
+    tutorRequestRef.current?.abort();
+    tutorRequestRef.current = null;
 
     if (restartTimerRef.current) {
       clearTimeout(
@@ -633,8 +719,8 @@ export default function LiveTutorScreen() {
         (item) => command === item
       )
     ) {
-      setSpeechRate(0.72);
-      speechRateRef.current = 0.72;
+      setSpeechRate(0.68);
+      speechRateRef.current = 0.68;
       processingRef.current = false;
 
       await repeatLastTutorReply();
@@ -652,8 +738,8 @@ export default function LiveTutorScreen() {
         (item) => command === item
       )
     ) {
-      setSpeechRate(0.9);
-      speechRateRef.current = 0.9;
+      setSpeechRate(0.82);
+      speechRateRef.current = 0.82;
       processingRef.current = false;
 
       appendMessage(
@@ -702,99 +788,103 @@ export default function LiveTutorScreen() {
       return;
     }
 
-    appendMessage(
-      'student',
-      cleanText
-    );
+    const recentMessages =
+      messagesRef.current
+        .slice(-12)
+        .map((message) => ({
+          role: message.role,
+          text: message.text,
+        }));
+
+    appendMessage('student', cleanText);
+
+    const tutorMessageId =
+      appendMessage('tutor', '…');
 
     const controller =
       new AbortController();
+    tutorRequestRef.current = controller;
+    let timedOut = false;
+    let streamedReply = '';
 
     const timeout = setTimeout(() => {
+      timedOut = true;
       controller.abort();
-    }, 180000);
+    }, 135000);
 
     try {
-      const recentMessages =
-        messagesRef.current
-          .slice(-12)
-          .map((message) => ({
-            role: message.role,
-            text: message.text,
-          }));
-
-      const response = await fetch(
-          getSlickkApiUrl('/api/tutor'),
+      const completed = await streamTutorResponse(
         {
-          method: 'POST',
-
-          headers: {
-            'Content-Type':
-              'application/json',
+          message: cleanText,
+          studentName: 'Student',
+          studentId: 'local-student',
+          conversationId:
+            conversationIdRef.current,
+          grade: 'Grade 7–8',
+          language:
+            recognitionLanguage ===
+            'bn-BD'
+              ? 'Bengali or Banglish'
+              : 'English or Banglish',
+          channel: 'live',
+          mode: 'adaptive',
+          recentMessages,
+        },
+        controller.signal,
+        {
+          onStart: (event) => {
+            conversationIdRef.current =
+              event.conversationId;
           },
-
-          signal: controller.signal,
-
-          body: JSON.stringify({
-            message: cleanText,
-            studentName: 'Student',
-            grade: 'Grade 7–8',
-            language:
-              recognitionLanguage ===
-              'bn-BD'
-                ? 'Bengali or Banglish'
-                : 'English or Banglish',
-            mode: 'adaptive',
-            recentMessages,
-          }),
+          onToken: (token) => {
+            streamedReply += token;
+            updateMessage(
+              tutorMessageId,
+              streamedReply
+            );
+          },
+          onComplete: (event) => {
+            conversationIdRef.current =
+              event.conversationId;
+          },
         }
       );
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ??
-            'The local tutor request failed.'
-        );
-      }
-
       const reply =
-        typeof data?.reply === 'string' &&
-        data.reply.trim()
-          ? data.reply.trim()
-          : 'I could not prepare an answer. Please ask again another way.';
+        completed.reply.trim() ||
+        streamedReply.trim() ||
+        'I could not prepare an answer. Please ask again another way.';
 
-      appendMessage('tutor', reply);
+      updateMessage(tutorMessageId, reply);
 
-      if (data?.learningTwin) {
+      if (completed.learningTwin) {
         setLearningTwin({
           topic:
-            data.learningTwin.topic ??
+            completed.learningTwin.topic ??
             'General learning',
 
           skill:
-            data.learningTwin.skill ??
+            completed.learningTwin.skill ??
             'Understanding',
 
           misconception:
-            data.learningTwin
+            completed.learningTwin
               .misconception ?? '',
 
           nextAction:
-            data.learningTwin
+            completed.learningTwin
               .nextAction ??
             'Continue learning',
 
           confidence:
             Number(
-              data.learningTwin
+              completed.learningTwin
                 .confidence
             ) || 0,
 
           masteryDelta:
             Number(
-              data.learningTwin
+              completed.learningTwin
                 .masteryDelta
             ) || 0,
         });
@@ -805,28 +895,54 @@ export default function LiveTutorScreen() {
       await speakTutorReply(reply);
     } catch (error) {
       console.error(
-        'Live tutor request error:',
+        'Live tutor streaming error:',
         error
       );
 
-      const responseMessage =
-        error instanceof Error &&
-        error.name === 'AbortError'
+      const wasCancelled =
+        controller.signal.aborted && !timedOut;
+
+      if (wasCancelled) {
+        updateMessage(
+          tutorMessageId,
+          streamedReply.trim()
+            ? `${streamedReply.trim()}\n\nResponse stopped.`
+            : 'Response stopped.'
+        );
+
+        processingRef.current = false;
+        setLiveState('idle');
+
+        if (handsFreeRef.current) {
+          scheduleListeningRestart(900);
+        }
+      } else {
+        const responseMessage = timedOut
           ? 'The local tutor took too long to answer. Please ask a shorter question.'
-          : 'I could not connect to the Slickk intelligence server. Make sure Ollama and node index.js are running on the laptop.';
+          : error instanceof TutorStreamError
+            ? error.message
+            : 'I could not connect to the Slickk intelligence server. Make sure Ollama and the Slickk server are running.';
 
-      appendMessage(
-        'tutor',
-        responseMessage
-      );
+        updateMessage(
+          tutorMessageId,
+          streamedReply.trim()
+            ? `${streamedReply.trim()}\n\n${responseMessage}`
+            : responseMessage
+        );
 
-      processingRef.current = false;
+        setErrorMessage(responseMessage);
+        processingRef.current = false;
 
-      await speakTutorReply(
-        responseMessage
-      );
+        await speakTutorReply(
+          responseMessage
+        );
+      }
     } finally {
       clearTimeout(timeout);
+
+      if (tutorRequestRef.current === controller) {
+        tutorRequestRef.current = null;
+      }
     }
   };
 
@@ -841,7 +957,15 @@ export default function LiveTutorScreen() {
     await sendToTutor(text);
   };
 
+  const cancelTutorResponse = () => {
+    tutorRequestRef.current?.abort();
+    processingRef.current = false;
+  };
+
   const interruptTutor = async () => {
+    tutorRequestRef.current?.abort();
+    processingRef.current = false;
+
     await stopSpeechOnly();
 
     setHandsFree(true);
@@ -1192,8 +1316,8 @@ export default function LiveTutorScreen() {
 
           <Text style={styles.liveHelp}>
             {handsFree
-              ? 'Hands-free mode is active. Slickk will listen again after every answer.'
-              : 'Start a live session, then ask your question naturally.'}
+              ? 'Slickk will teach one small step, then listen for your response.'
+              : 'Start a live session and ask your question naturally.'}
           </Text>
 
           {(liveState === 'listening' ||
@@ -1249,7 +1373,30 @@ export default function LiveTutorScreen() {
           ) : null}
 
           <View style={styles.controlRow}>
-            {!handsFree ? (
+            {liveState === 'thinking' ? (
+              <Pressable
+                onPress={cancelTutorResponse}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  styles.cancelResponseButton,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons
+                  name="stop"
+                  size={22}
+                  color="#FFFFFF"
+                />
+
+                <Text
+                  style={
+                    styles.cancelResponseText
+                  }
+                >
+                  Stop response
+                </Text>
+              </Pressable>
+            ) : !handsFree ? (
               <Pressable
                 onPress={() =>
                   void startLiveSession()
@@ -1429,29 +1576,42 @@ export default function LiveTutorScreen() {
               maxLength={2000}
             />
 
-            <Pressable
-              onPress={() =>
-                void submitTypedInput()
-              }
-              disabled={
-                !typedInput.trim() ||
-                liveState === 'thinking'
-              }
-              style={({ pressed }) => [
-                styles.sendButton,
-                (!typedInput.trim() ||
-                  liveState ===
-                    'thinking') &&
-                  styles.disabledButton,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Ionicons
-                name="arrow-up"
-                size={21}
-                color="#06101C"
-              />
-            </Pressable>
+            {liveState === 'thinking' ? (
+              <Pressable
+                accessibilityLabel="Stop tutor response"
+                onPress={cancelTutorResponse}
+                style={({ pressed }) => [
+                  styles.sendButton,
+                  styles.cancelSendButton,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons
+                  name="stop"
+                  size={21}
+                  color="#FFFFFF"
+                />
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={() =>
+                  void submitTypedInput()
+                }
+                disabled={!typedInput.trim()}
+                style={({ pressed }) => [
+                  styles.sendButton,
+                  !typedInput.trim() &&
+                    styles.disabledButton,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons
+                  name="arrow-up"
+                  size={21}
+                  color="#06101C"
+                />
+              </Pressable>
+            )}
           </View>
 
           <Text style={styles.footerText}>
@@ -1667,6 +1827,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#70F7D4',
   },
 
+  cancelResponseButton: {
+    backgroundColor: '#D94B5B',
+  },
+
+  cancelResponseText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
   primaryButtonText: {
     color: '#06101C',
     fontSize: 13,
@@ -1850,6 +2020,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#70F7D4',
+  },
+
+  cancelSendButton: {
+    backgroundColor: '#D94B5B',
   },
 
   disabledButton: {

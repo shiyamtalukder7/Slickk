@@ -17,6 +17,17 @@ test('parseTutorRequest applies safe defaults', () => {
   assert.equal(result.data.mode, 'adaptive');
   assert.equal(result.data.language, 'English');
   assert.equal(result.data.studentId, 'local-student');
+  assert.equal(result.data.channel, 'typed');
+});
+
+test('parseTutorRequest accepts live teaching delivery', () => {
+  const result = parseTutorRequest({
+    message: 'Teach me gently',
+    channel: 'live',
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.data.channel, 'live');
 });
 
 test('parseTutorRequest accepts a conversation ID', () => {

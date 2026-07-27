@@ -30,6 +30,7 @@ export type TutorStreamRequest = {
   conversationId?: string;
   grade: string;
   language: string;
+  channel: 'typed' | 'live';
   mode: TutorMode;
   recentMessages: TutorHistoryMessage[];
 };

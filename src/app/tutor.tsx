@@ -294,6 +294,7 @@ export default function SlickkTutorScreen() {
           conversationId,
           grade: 'Grade 7–8',
           language: 'English',
+          channel: 'typed',
           mode: selectedMode,
           recentMessages: messages
             .slice(-10)
