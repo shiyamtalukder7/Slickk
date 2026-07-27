@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { getSlickkApiUrl } from '@/config/api';
 import {
   useCallback,
   useEffect,
@@ -44,9 +45,6 @@ type Subject = {
   title: string;
   subtitle: string;
 };
-
-const SERVER_URL =
-  'http://192.168.1.172:3000';
 
 const QUICK_TOOLS: QuickTool[] = [
   {
@@ -153,7 +151,7 @@ export default function SlickkDashboardScreen() {
 
       try {
         const response = await fetch(
-          `${SERVER_URL}/health`,
+          getSlickkApiUrl('/health'),
           {
             signal: controller.signal,
           }

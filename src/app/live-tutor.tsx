@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Speech from 'expo-speech';
+import { getSlickkApiUrl } from '@/config/api';
 import {
     ExpoSpeechRecognitionModule,
     useSpeechRecognitionEvent,
@@ -49,8 +50,6 @@ type LearningTwin = {
   confidence: number;
   masteryDelta: number;
 };
-
-const SERVER_URL = 'http://192.168.1.172:3000';
 
 const STARTER_MESSAGES: Message[] = [
   {
@@ -725,7 +724,7 @@ export default function LiveTutorScreen() {
           }));
 
       const response = await fetch(
-        `${SERVER_URL}/api/tutor`,
+          getSlickkApiUrl('/api/tutor'),
         {
           method: 'POST',
 
