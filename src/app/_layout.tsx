@@ -1,18 +1,57 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
-
-SplashScreen.preventAutoHideAsync();
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function RootLayout() {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <>
+      <StatusBar style="light" />
+
+      <Stack
+        initialRouteName="index"
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          contentStyle: {
+            backgroundColor: '#07101E',
+          },
+        }}
+      >
+        <Stack.Screen
+          name="index"
+          options={{
+            title: 'Slickk',
+          }}
+        />
+
+        <Stack.Screen
+          name="onboarding"
+          options={{
+            title: 'Student Setup',
+          }}
+        />
+
+        <Stack.Screen
+          name="explore"
+          options={{
+            title: 'Slickk Dashboard',
+            gestureEnabled: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="tutor"
+          options={{
+            title: 'Slickk Tutor',
+          }}
+        />
+
+        <Stack.Screen
+          name="twin"
+          options={{
+            title: 'Learning Twin',
+          }}
+        />
+      </Stack>
+    </>
   );
 }
