@@ -2,7 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Speech from 'expo-speech';
 import { useEffect, useRef, useState } from 'react';
-import { getSlickkApiUrl } from '@/config/api';
+import {
+  streamTutorResponse,
+  TutorStreamError,
+} from '@/services/tutor-stream';
 import {
   ActivityIndicator,
   Alert,
@@ -96,10 +99,19 @@ export default function SlickkTutorScreen() {
   const [learningTwin, setLearningTwin] =
     useState<LearningTwin | null>(null);
 
+  const [conversationId, setConversationId] =
+    useState<string | undefined>();
+
+  const [hasReceivedToken, setHasReceivedToken] =
+    useState(false);
+
   const listRef = useRef<FlatList<Message>>(null);
+  const activeRequestRef =
+    useRef<AbortController | null>(null);
 
   useEffect(() => {
     return () => {
+      activeRequestRef.current?.abort();
       void Speech.stop();
     };
   }, []);
@@ -200,6 +212,28 @@ export default function SlickkTutorScreen() {
     scrollToBottom();
   };
 
+  const updateTutorMessage = (
+    messageId: string,
+    text: string
+  ) => {
+    setMessages((currentMessages) =>
+      currentMessages.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              text,
+            }
+          : message
+      )
+    );
+
+    scrollToBottom();
+  };
+
+  const cancelTutorResponse = () => {
+    activeRequestRef.current?.abort();
+  };
+
   const sendMessage = async (
     customMessage?: string,
     selectedMode: TutorMode = currentMode
@@ -225,113 +259,165 @@ export default function SlickkTutorScreen() {
       studentMessage,
     ];
 
-    setMessages(updatedMessages);
+    const tutorMessageId = `tutor-stream-${Date.now()}`;
+
+    setMessages([
+      ...updatedMessages,
+      {
+        id: tutorMessageId,
+        role: 'tutor',
+        text: '…',
+      },
+    ]);
     setInput('');
     setCurrentMode(selectedMode);
     setIsThinking(true);
+    setHasReceivedToken(false);
     scrollToBottom();
 
     const controller = new AbortController();
+    activeRequestRef.current = controller;
+    let timedOut = false;
+    let streamedReply = '';
 
     const timeout = setTimeout(() => {
+      timedOut = true;
       controller.abort();
-    }, 120000);
+    }, 135000);
 
     try {
-      const response = await fetch(
-          getSlickkApiUrl('/api/tutor'),
+      const completed = await streamTutorResponse(
         {
-          method: 'POST',
-
-          headers: {
-            'Content-Type': 'application/json',
+          message: messageText,
+          studentName: 'Student',
+          studentId: 'local-student',
+          conversationId,
+          grade: 'Grade 7–8',
+          language: 'English',
+          mode: selectedMode,
+          recentMessages: messages
+            .slice(-10)
+            .map((message) => ({
+              role: message.role,
+              text: message.text,
+            })),
+        },
+        controller.signal,
+        {
+          onStart: (event) => {
+            setConversationId(event.conversationId);
           },
-
-          signal: controller.signal,
-
-          body: JSON.stringify({
-            message: messageText,
-            studentName: 'Student',
-            grade: 'Grade 7–8',
-            language: 'English',
-            mode: selectedMode,
-
-            recentMessages: messages
-              .slice(-10)
-              .map((message) => ({
-                role: message.role,
-                text: message.text,
-              })),
-          }),
+          onToken: (token) => {
+            streamedReply += token;
+            setHasReceivedToken(true);
+            updateTutorMessage(
+              tutorMessageId,
+              streamedReply
+            );
+          },
+          onComplete: (event) => {
+            setConversationId(event.conversationId);
+          },
         }
       );
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            'The tutor request failed.'
-        );
-      }
-
       const reply =
-        typeof data?.reply === 'string' &&
-        data.reply.trim()
-          ? data.reply.trim()
-          : 'I could not prepare an answer. Please ask another way.';
+        completed.reply.trim() ||
+        streamedReply.trim() ||
+        'I could not prepare an answer. Please ask another way.';
 
-      addTutorMessage(reply);
+      updateTutorMessage(tutorMessageId, reply);
 
-      await speakText(reply);
-
-      if (data?.learningTwin) {
+      if (completed.learningTwin) {
         setLearningTwin({
           topic:
-            data.learningTwin.topic ||
+            completed.learningTwin.topic ||
             'General learning',
 
           skill:
-            data.learningTwin.skill ||
+            completed.learningTwin.skill ||
             'Understanding',
 
           misconception:
-            data.learningTwin.misconception ||
+            completed.learningTwin.misconception ||
             '',
 
           nextAction:
-            data.learningTwin.nextAction ||
+            completed.learningTwin.nextAction ||
             'Continue learning',
 
           confidence:
             Number(
-              data.learningTwin.confidence
+              completed.learningTwin.confidence
             ) || 0,
 
           masteryDelta:
             Number(
-              data.learningTwin.masteryDelta
+              completed.learningTwin.masteryDelta
             ) || 0,
         });
       }
+
+      await speakText(reply);
     } catch (error) {
       console.error(
-        'Slickk tutor connection error:',
+        'Slickk tutor streaming error:',
         error
       );
 
-      const errorMessage =
-        error instanceof Error &&
-        error.name === 'AbortError'
-          ? 'The local tutor took too long to answer. Please try a shorter question.'
-          : 'I could not connect to the Slickk local AI. Make sure Ollama and the Slickk server are running on your laptop.';
+      const wasCancelled =
+        controller.signal.aborted && !timedOut;
 
-      addTutorMessage(errorMessage);
+      if (wasCancelled) {
+        updateTutorMessage(
+          tutorMessageId,
+          streamedReply.trim()
+            ? `${streamedReply.trim()}\n\nResponse stopped.`
+            : 'Response stopped.'
+        );
+      } else {
+        const errorMessage = timedOut
+          ? 'The local tutor took too long to answer. Try a shorter question.'
+          : error instanceof TutorStreamError
+            ? error.message
+            : 'I could not connect to the Slickk local AI. Make sure Ollama and the Slickk server are running.';
 
-      await speakText(errorMessage);
+        updateTutorMessage(
+          tutorMessageId,
+          streamedReply.trim()
+            ? `${streamedReply.trim()}\n\n${errorMessage}`
+            : errorMessage
+        );
+
+        Alert.alert(
+          'Slickk could not finish',
+          errorMessage,
+          [
+            {
+              text: 'Not now',
+              style: 'cancel',
+            },
+            {
+              text: 'Retry',
+              onPress: () => {
+                void sendMessage(
+                  messageText,
+                  selectedMode
+                );
+              },
+            },
+          ]
+        );
+      }
     } finally {
       clearTimeout(timeout);
+
+      if (activeRequestRef.current === controller) {
+        activeRequestRef.current = null;
+      }
+
       setIsThinking(false);
+      setHasReceivedToken(false);
     }
   };
 
@@ -473,6 +559,7 @@ export default function SlickkTutorScreen() {
         <View style={styles.header}>
           <Pressable
             onPress={async () => {
+              activeRequestRef.current?.abort();
               await stopSpeech();
               router.back();
             }}
@@ -655,7 +742,7 @@ export default function SlickkTutorScreen() {
             </View>
           }
           ListFooterComponent={
-            isThinking ? (
+            isThinking && !hasReceivedToken ? (
               <View
                 style={styles.thinkingRow}
               >
@@ -719,9 +806,23 @@ export default function SlickkTutorScreen() {
               editable={!isThinking}
             />
 
-            {input.trim().length > 0 ? (
+            {isThinking ? (
               <Pressable
-                disabled={isThinking}
+                accessibilityLabel="Stop tutor response"
+                onPress={cancelTutorResponse}
+                style={({ pressed }) => [
+                  styles.stopResponseButton,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons
+                  name="stop"
+                  size={21}
+                  color="#FFFFFF"
+                />
+              </Pressable>
+            ) : input.trim().length > 0 ? (
+              <Pressable
                 onPress={() =>
                   void sendMessage()
                 }
@@ -730,18 +831,11 @@ export default function SlickkTutorScreen() {
                   pressed && styles.pressed,
                 ]}
               >
-                {isThinking ? (
-                  <ActivityIndicator
-                    size="small"
-                    color="#081426"
-                  />
-                ) : (
-                  <Ionicons
-                    name="arrow-up"
-                    size={22}
-                    color="#081426"
-                  />
-                )}
+                <Ionicons
+                  name="arrow-up"
+                  size={22}
+                  color="#081426"
+                />
               </Pressable>
             ) : (
               <Pressable
@@ -1108,6 +1202,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#70F7D4',
+  },
+
+  stopResponseButton: {
+    width: 43,
+    height: 43,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#D94B5B',
   },
 
   voiceButton: {
