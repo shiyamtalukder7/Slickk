@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useRef, useState } from 'react';
+import * as Speech from 'expo-speech';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +18,13 @@ import {
 } from 'react-native';
 
 type MessageRole = 'student' | 'tutor';
-type TutorMode = 'adaptive' | 'teach' | 'hint' | 'quiz' | 'explain';
+
+type TutorMode =
+  | 'adaptive'
+  | 'teach'
+  | 'hint'
+  | 'quiz'
+  | 'explain';
 
 type Message = {
   id: string;
@@ -55,19 +62,22 @@ const LEARNING_MODES: {
     icon: 'school-outline',
     label: 'Teach me',
     mode: 'teach',
-    prompt: 'Teach me this topic from the beginning, step by step.',
+    prompt:
+      'Teach me this topic from the beginning, step by step.',
   },
   {
     icon: 'bulb-outline',
     label: 'Give a hint',
     mode: 'hint',
-    prompt: 'Give me a hint without revealing the complete answer.',
+    prompt:
+      'Give me a hint without revealing the complete answer.',
   },
   {
     icon: 'help-circle-outline',
     label: 'Quiz me',
     mode: 'quiz',
-    prompt: 'Quiz me with one question at a time.',
+    prompt:
+      'Quiz me with one question at a time.',
   },
 ];
 
@@ -77,6 +87,10 @@ export default function SlickkTutorScreen() {
 
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isSpeechEnabled, setIsSpeechEnabled] =
+    useState(true);
+
   const [currentMode, setCurrentMode] =
     useState<TutorMode>('adaptive');
 
@@ -85,12 +99,91 @@ export default function SlickkTutorScreen() {
 
   const listRef = useRef<FlatList<Message>>(null);
 
+  useEffect(() => {
+    return () => {
+      void Speech.stop();
+    };
+  }, []);
+
   const scrollToBottom = () => {
     setTimeout(() => {
       listRef.current?.scrollToEnd({
         animated: true,
       });
     }, 150);
+  };
+
+  const speakText = async (
+    text: string,
+    forceSpeech = false
+  ) => {
+    if (!isSpeechEnabled && !forceSpeech) {
+      return;
+    }
+
+    try {
+      await Speech.stop();
+
+      setIsSpeaking(true);
+
+      const safeText = text.slice(
+        0,
+        Speech.maxSpeechInputLength
+      );
+
+      Speech.speak(safeText, {
+        language: 'en-US',
+        rate: 0.9,
+        pitch: 1,
+        volume: 1,
+
+        onDone: () => {
+          setIsSpeaking(false);
+        },
+
+        onStopped: () => {
+          setIsSpeaking(false);
+        },
+
+        onError: (error) => {
+          console.error(
+            'Slickk speech error:',
+            error
+          );
+
+          setIsSpeaking(false);
+        },
+      });
+    } catch (error) {
+      console.error(
+        'Slickk speech start error:',
+        error
+      );
+
+      setIsSpeaking(false);
+    }
+  };
+
+  const stopSpeech = async () => {
+    try {
+      await Speech.stop();
+      setIsSpeaking(false);
+    } catch (error) {
+      console.error(
+        'Slickk speech stop error:',
+        error
+      );
+    }
+  };
+
+  const toggleAutomaticSpeech = async () => {
+    const nextValue = !isSpeechEnabled;
+
+    setIsSpeechEnabled(nextValue);
+
+    if (!nextValue) {
+      await stopSpeech();
+    }
   };
 
   const addTutorMessage = (text: string) => {
@@ -112,11 +205,15 @@ export default function SlickkTutorScreen() {
     customMessage?: string,
     selectedMode: TutorMode = currentMode
   ) => {
-    const messageText = (customMessage ?? input).trim();
+    const messageText = (
+      customMessage ?? input
+    ).trim();
 
     if (!messageText || isThinking) {
       return;
     }
+
+    await stopSpeech();
 
     const studentMessage: Message = {
       id: `student-${Date.now()}`,
@@ -174,7 +271,8 @@ export default function SlickkTutorScreen() {
 
       if (!response.ok) {
         throw new Error(
-          data?.error || 'The tutor request failed.'
+          data?.error ||
+            'The tutor request failed.'
         );
       }
 
@@ -185,6 +283,8 @@ export default function SlickkTutorScreen() {
           : 'I could not prepare an answer. Please ask another way.';
 
       addTutorMessage(reply);
+
+      await speakText(reply);
 
       if (data?.learningTwin) {
         setLearningTwin({
@@ -221,13 +321,15 @@ export default function SlickkTutorScreen() {
         error
       );
 
-      const message =
+      const errorMessage =
         error instanceof Error &&
         error.name === 'AbortError'
           ? 'The local tutor took too long to answer. Please try a shorter question.'
           : 'I could not connect to the Slickk local AI. Make sure Ollama and the Slickk server are running on your laptop.';
 
-      addTutorMessage(message);
+      addTutorMessage(errorMessage);
+
+      await speakText(errorMessage);
     } finally {
       clearTimeout(timeout);
       setIsThinking(false);
@@ -240,20 +342,25 @@ export default function SlickkTutorScreen() {
   ) => {
     setCurrentMode(mode);
 
-    const latestStudentQuestion = [...messages]
+    const latestStudentQuestion = [
+      ...messages,
+    ]
       .reverse()
       .find(
-        (message) => message.role === 'student'
+        (message) =>
+          message.role === 'student'
       );
 
     if (!latestStudentQuestion) {
-      addTutorMessage(
-        'Ask me about a topic first, then select this learning mode.'
-      );
+      const guidance =
+        'Ask me about a topic first, then select this learning mode.';
+
+      addTutorMessage(guidance);
+      void speakText(guidance);
       return;
     }
 
-    sendMessage(
+    void sendMessage(
       `${prompt}\n\nTopic: ${latestStudentQuestion.text}`,
       mode
     );
@@ -262,14 +369,14 @@ export default function SlickkTutorScreen() {
   const openVoiceTutor = () => {
     Alert.alert(
       'Live Voice Tutor',
-      'The text tutor is now connected to your local AI. Continuous microphone streaming is the next development stage.'
+      'Automatic spoken answers are now active. Microphone listening and hands-free conversation are the next development stage.'
     );
   };
 
   const openCamera = () => {
     Alert.alert(
       'Camera Learning',
-      'Image and handwriting analysis will be connected after the local text tutor is verified.'
+      'Image and handwriting analysis will be connected after the voice tutor is verified.'
     );
   };
 
@@ -309,9 +416,30 @@ export default function SlickkTutorScreen() {
           ]}
         >
           {!isStudent && (
-            <Text style={styles.messageName}>
-              SLICKK TUTOR
-            </Text>
+            <View style={styles.messageHeader}>
+              <Text style={styles.messageName}>
+                SLICKK TUTOR
+              </Text>
+
+              <Pressable
+                onPress={() =>
+                  void speakText(
+                    item.text,
+                    true
+                  )
+                }
+                style={({ pressed }) => [
+                  styles.replayButton,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons
+                  name="volume-medium-outline"
+                  size={18}
+                  color="#70F7D4"
+                />
+              </Pressable>
+            </View>
           )}
 
           <Text
@@ -345,7 +473,10 @@ export default function SlickkTutorScreen() {
       >
         <View style={styles.header}>
           <Pressable
-            onPress={() => router.back()}
+            onPress={async () => {
+              await stopSpeech();
+              router.back();
+            }}
             style={({ pressed }) => [
               styles.headerButton,
               pressed && styles.pressed,
@@ -360,7 +491,13 @@ export default function SlickkTutorScreen() {
 
           <View style={styles.headerCenter}>
             <View style={styles.tutorStatusRow}>
-              <View style={styles.onlineDot} />
+              <View
+                style={[
+                  styles.onlineDot,
+                  isSpeaking &&
+                    styles.speakingDot,
+                ]}
+              />
 
               <Text style={styles.headerTitle}>
                 Slickk Tutor
@@ -368,26 +505,35 @@ export default function SlickkTutorScreen() {
             </View>
 
             <Text style={styles.headerSubtitle}>
-              Local private intelligence
+              {isSpeaking
+                ? 'Speaking now'
+                : 'Local private intelligence'}
             </Text>
           </View>
 
           <Pressable
             onPress={() =>
-              Alert.alert(
-                'Current engine',
-                'Provider: Ollama\nModel: Qwen 2.5 3B\nConnection: Laptop local network'
-              )
+              void toggleAutomaticSpeech()
             }
             style={({ pressed }) => [
               styles.headerButton,
+              isSpeechEnabled &&
+                styles.headerButtonActive,
               pressed && styles.pressed,
             ]}
           >
             <Ionicons
-              name="hardware-chip-outline"
+              name={
+                isSpeechEnabled
+                  ? 'volume-high-outline'
+                  : 'volume-mute-outline'
+              }
               size={22}
-              color="#70F7D4"
+              color={
+                isSpeechEnabled
+                  ? '#081426'
+                  : '#70F7D4'
+              }
             />
           </Pressable>
         </View>
@@ -418,66 +564,92 @@ export default function SlickkTutorScreen() {
               </Text>
 
               <Text
-                style={styles.lessonDescription}
+                style={
+                  styles.lessonDescription
+                }
               >
-                Slickk teaches, listens, questions,
-                corrects and adapts to how you learn.
+                Slickk teaches, listens,
+                questions, corrects and adapts
+                to how you learn.
               </Text>
 
               <View style={styles.modeRow}>
-                {LEARNING_MODES.map((mode) => (
-                  <Pressable
-                    key={mode.label}
-                    disabled={isThinking}
-                    onPress={() =>
-                      useLearningMode(
-                        mode.mode,
-                        mode.prompt
-                      )
-                    }
-                    style={({ pressed }) => [
-                      styles.modeButton,
-                      currentMode === mode.mode &&
-                        styles.modeButtonSelected,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Ionicons
-                      name={mode.icon}
-                      size={18}
-                      color="#70F7D4"
-                    />
+                {LEARNING_MODES.map(
+                  (mode) => (
+                    <Pressable
+                      key={mode.label}
+                      disabled={isThinking}
+                      onPress={() =>
+                        useLearningMode(
+                          mode.mode,
+                          mode.prompt
+                        )
+                      }
+                      style={({
+                        pressed,
+                      }) => [
+                        styles.modeButton,
+                        currentMode ===
+                          mode.mode &&
+                          styles.modeButtonSelected,
+                        pressed &&
+                          styles.pressed,
+                      ]}
+                    >
+                      <Ionicons
+                        name={mode.icon}
+                        size={18}
+                        color="#70F7D4"
+                      />
 
-                    <Text style={styles.modeText}>
-                      {mode.label}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <Text
+                        style={styles.modeText}
+                      >
+                        {mode.label}
+                      </Text>
+                    </Pressable>
+                  )
+                )}
               </View>
 
               {learningTwin && (
                 <View style={styles.twinCard}>
-                  <Text style={styles.twinLabel}>
+                  <Text
+                    style={styles.twinLabel}
+                  >
                     LEARNING TWIN SIGNAL
                   </Text>
 
-                  <Text style={styles.twinTopic}>
+                  <Text
+                    style={styles.twinTopic}
+                  >
                     {learningTwin.topic}
                   </Text>
 
-                  <Text style={styles.twinDetail}>
+                  <Text
+                    style={styles.twinDetail}
+                  >
                     Skill: {learningTwin.skill}
                   </Text>
 
                   {learningTwin.misconception ? (
-                    <Text style={styles.twinWarning}>
+                    <Text
+                      style={
+                        styles.twinWarning
+                      }
+                    >
                       Possible misconception:{' '}
-                      {learningTwin.misconception}
+                      {
+                        learningTwin.misconception
+                      }
                     </Text>
                   ) : null}
 
-                  <Text style={styles.twinNext}>
-                    Next: {learningTwin.nextAction}
+                  <Text
+                    style={styles.twinNext}
+                  >
+                    Next:{' '}
+                    {learningTwin.nextAction}
                   </Text>
                 </View>
               )}
@@ -485,8 +657,12 @@ export default function SlickkTutorScreen() {
           }
           ListFooterComponent={
             isThinking ? (
-              <View style={styles.thinkingRow}>
-                <View style={styles.tutorAvatar}>
+              <View
+                style={styles.thinkingRow}
+              >
+                <View
+                  style={styles.tutorAvatar}
+                >
                   <Ionicons
                     name="sparkles"
                     size={18}
@@ -494,14 +670,22 @@ export default function SlickkTutorScreen() {
                   />
                 </View>
 
-                <View style={styles.thinkingBubble}>
+                <View
+                  style={
+                    styles.thinkingBubble
+                  }
+                >
                   <ActivityIndicator
                     size="small"
                     color="#70F7D4"
                   />
 
-                  <Text style={styles.thinkingText}>
-                    Local AI is thinking...
+                  <Text
+                    style={
+                      styles.thinkingText
+                    }
+                  >
+                    Slickk is thinking...
                   </Text>
                 </View>
               </View>
@@ -540,7 +724,7 @@ export default function SlickkTutorScreen() {
               <Pressable
                 disabled={isThinking}
                 onPress={() =>
-                  sendMessage()
+                  void sendMessage()
                 }
                 style={({ pressed }) => [
                   styles.sendButton,
@@ -578,7 +762,8 @@ export default function SlickkTutorScreen() {
           </View>
 
           <Text style={styles.composerHint}>
-            Local Qwen AI • Private laptop processing
+            Answers speak automatically •
+            Local Slickk AI
           </Text>
         </View>
       </KeyboardAvoidingView>
@@ -598,12 +783,16 @@ const styles = StyleSheet.create({
 
   header: {
     minHeight:
-      Platform.OS === 'android' ? 102 : 74,
+      Platform.OS === 'android'
+        ? 102
+        : 74,
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 18,
     paddingTop:
-      Platform.OS === 'android' ? 35 : 10,
+      Platform.OS === 'android'
+        ? 35
+        : 10,
     paddingBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#15243A',
@@ -619,6 +808,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#203047',
     backgroundColor: '#0C192A',
+  },
+
+  headerButtonActive: {
+    borderColor: '#70F7D4',
+    backgroundColor: '#70F7D4',
   },
 
   headerCenter: {
@@ -638,6 +832,10 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#70F7D4',
+  },
+
+  speakingDot: {
+    backgroundColor: '#FFD36E',
   },
 
   headerTitle: {
@@ -805,12 +1003,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#70F7D4',
   },
 
+  messageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+
   messageName: {
     color: '#70F7D4',
     fontSize: 9,
     fontWeight: '900',
     letterSpacing: 1.1,
-    marginBottom: 6,
+  },
+
+  replayButton: {
+    width: 30,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   messageText: {
@@ -852,7 +1063,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 11,
     paddingBottom:
-      Platform.OS === 'android' ? 18 : 12,
+      Platform.OS === 'android'
+        ? 18
+        : 12,
     borderTopWidth: 1,
     borderTopColor: '#15243A',
     backgroundColor: '#081322',

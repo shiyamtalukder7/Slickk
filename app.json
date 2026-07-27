@@ -34,6 +34,16 @@
           "imageWidth": 76
         }
       ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Slickk to use the microphone for live tutoring.",
+          "speechRecognitionPermission": "Allow Slickk to recognize your speech during live tutoring.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
+        }
+      ],
       "expo-audio",
       "expo-asset"
     ],
