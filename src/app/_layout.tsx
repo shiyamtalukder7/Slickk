@@ -46,6 +46,13 @@ export default function RootLayout() {
         />
 
         <Stack.Screen
+          name="live-tutor"
+          options={{
+            title: 'Slickk Live Tutor',
+          }}
+        />
+
+        <Stack.Screen
           name="twin"
           options={{
             title: 'Learning Twin',

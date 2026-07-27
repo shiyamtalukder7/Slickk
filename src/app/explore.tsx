@@ -1,6 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import {
+  useCallback,
+  useEffect,
+  useState,
+  type ComponentProps,
+} from 'react';
+import {
   Alert,
   Platform,
   Pressable,
@@ -12,63 +18,253 @@ import {
   View,
 } from 'react-native';
 
-const QUICK_TOOLS = [
+type IoniconName =
+  ComponentProps<typeof Ionicons>['name'];
+
+type ServerStatus =
+  | 'checking'
+  | 'online'
+  | 'offline';
+
+type QuickTool = {
+  id: string;
+  icon: IoniconName;
+  title: string;
+  subtitle: string;
+  action:
+    | 'live-tutor'
+    | 'typed-tutor'
+    | 'camera'
+    | 'upload';
+};
+
+type Subject = {
+  id: string;
+  icon: IoniconName;
+  title: string;
+  subtitle: string;
+};
+
+const SERVER_URL =
+  'http://192.168.1.172:3000';
+
+const QUICK_TOOLS: QuickTool[] = [
   {
-    icon: 'mic',
-    title: 'Voice Tutor',
-    subtitle: 'Speak naturally',
+    id: 'voice',
+    icon: 'mic-outline',
+    title: 'Live Tutor',
+    subtitle: 'Hands-free conversation',
+    action: 'live-tutor',
   },
   {
-    icon: 'camera',
+    id: 'typed',
+    icon: 'chatbubble-ellipses-outline',
+    title: 'Typed Tutor',
+    subtitle: 'Ask and learn step by step',
+    action: 'typed-tutor',
+  },
+  {
+    id: 'camera',
+    icon: 'camera-outline',
     title: 'Camera Learn',
-    subtitle: 'Scan any question',
+    subtitle: 'Scan questions and notes',
+    action: 'camera',
   },
   {
-    icon: 'images',
+    id: 'upload',
+    icon: 'document-text-outline',
     title: 'Upload Notes',
-    subtitle: 'Images and documents',
-  },
-  {
-    icon: 'bulb',
-    title: 'Explain It',
-    subtitle: 'Learn step by step',
+    subtitle: 'Learn from documents',
+    action: 'upload',
   },
 ];
 
-const SUBJECTS = [
+const SUBJECTS: Subject[] = [
   {
-    icon: 'calculator',
-    name: 'Mathematics',
+    id: 'mathematics',
+    icon: 'calculator-outline',
+    title: 'Mathematics',
+    subtitle: 'Numbers, algebra and geometry',
   },
   {
-    icon: 'flask',
-    name: 'Science',
+    id: 'science',
+    icon: 'flask-outline',
+    title: 'Science',
+    subtitle: 'Physics, chemistry and biology',
   },
   {
-    icon: 'language',
-    name: 'English',
+    id: 'english',
+    icon: 'language-outline',
+    title: 'English',
+    subtitle: 'Reading, writing and grammar',
   },
   {
-    icon: 'earth',
-    name: 'Social Studies',
+    id: 'social-studies',
+    icon: 'earth-outline',
+    title: 'Social Studies',
+    subtitle: 'History, geography and society',
   },
 ];
+
+function getStatusText(
+  status: ServerStatus
+) {
+  switch (status) {
+    case 'online':
+      return 'LOCAL AI ONLINE';
+
+    case 'offline':
+      return 'LOCAL AI OFFLINE';
+
+    default:
+      return 'CHECKING LOCAL AI';
+  }
+}
+
+function getStatusDescription(
+  status: ServerStatus
+) {
+  switch (status) {
+    case 'online':
+      return 'Slickk intelligence is connected and ready.';
+
+    case 'offline':
+      return 'Start Ollama and the Slickk Node server on your laptop.';
+
+    default:
+      return 'Connecting to your private intelligence server.';
+  }
+}
 
 export default function SlickkDashboardScreen() {
-  const showNextFeature = (feature: string) => {
-    Alert.alert(
-      feature,
-      'This Slickk feature is prepared for the next development stage.'
-    );
+  const [serverStatus, setServerStatus] =
+    useState<ServerStatus>('checking');
+
+  const checkServer = useCallback(
+    async () => {
+      setServerStatus('checking');
+
+      const controller =
+        new AbortController();
+
+      const timeout = setTimeout(() => {
+        controller.abort();
+      }, 5000);
+
+      try {
+        const response = await fetch(
+          `${SERVER_URL}/health`,
+          {
+            signal: controller.signal,
+          }
+        );
+
+        setServerStatus(
+          response.ok ? 'online' : 'offline'
+        );
+      } catch {
+        setServerStatus('offline');
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    void checkServer();
+  }, [checkServer]);
+
+  const openLiveTutor = () => {
+    router.push('/live-tutor');
   };
 
-  const openTutor = () => {
+  const openTypedTutor = () => {
     router.push('/tutor');
   };
 
   const openLearningTwin = () => {
     router.push('/twin');
   };
+
+  const openStudentProfile = () => {
+    router.push('/onboarding');
+  };
+
+  const showComingSoon = (
+    title: string,
+    message: string
+  ) => {
+    Alert.alert(title, message);
+  };
+
+  const handleQuickTool = (
+    tool: QuickTool
+  ) => {
+    switch (tool.action) {
+      case 'live-tutor':
+        openLiveTutor();
+        return;
+
+      case 'typed-tutor':
+        openTypedTutor();
+        return;
+
+      case 'camera':
+        showComingSoon(
+          'Camera Learn',
+          'Camera and handwriting understanding will be connected after the live voice system is verified.'
+        );
+        return;
+
+      case 'upload':
+        showComingSoon(
+          'Upload Notes',
+          'Document, image and lesson-material uploads are part of the next learning-content stage.'
+        );
+        return;
+
+      default:
+        return;
+    }
+  };
+
+  const openSubject = (
+    subject: Subject
+  ) => {
+    Alert.alert(
+      subject.title,
+      `Start a personalised ${subject.title} lesson with Slickk Tutor.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Typed lesson',
+          onPress: openTypedTutor,
+        },
+        {
+          text: 'Live lesson',
+          onPress: openLiveTutor,
+        },
+      ]
+    );
+  };
+
+  const openStudyPlan = () => {
+    showComingSoon(
+      'Adaptive Study Plan',
+      'Slickk will generate personal lessons and revision schedules after the Learning Twin stores enough mastery evidence.'
+    );
+  };
+
+  const statusColor =
+    serverStatus === 'online'
+      ? '#70F7D4'
+      : serverStatus === 'offline'
+        ? '#FF8E8E'
+        : '#FFD36E';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -78,22 +274,34 @@ export default function SlickkDashboardScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={
+          styles.container
+        }
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.glow} />
+        <View style={styles.topGlow} />
+        <View style={styles.sideGlow} />
 
         <View style={styles.header}>
           <View>
-            <Text style={styles.smallGreeting}>WELCOME TO</Text>
-            <Text style={styles.brand}>SLICKK</Text>
+            <Text
+              style={styles.smallGreeting}
+            >
+              WELCOME TO
+            </Text>
+
+            <Text style={styles.brand}>
+              SLICKK
+            </Text>
           </View>
 
           <Pressable
-            onPress={() => showNextFeature('Student Profile')}
+            accessibilityRole="button"
+            accessibilityLabel="Open student profile"
+            onPress={openStudentProfile}
             style={({ pressed }) => [
               styles.profileButton,
-              pressed && styles.cardPressed,
+              pressed && styles.pressed,
             ]}
           >
             <Ionicons
@@ -104,46 +312,143 @@ export default function SlickkDashboardScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.heroCard}>
-          <View style={styles.liveBadge}>
-            <View style={styles.liveDot} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Check local AI connection"
+          onPress={() =>
+            void checkServer()
+          }
+          style={({ pressed }) => [
+            styles.connectionCard,
+            pressed && styles.pressed,
+          ]}
+        >
+          <View
+            style={[
+              styles.connectionIcon,
+              {
+                borderColor: statusColor,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.connectionDot,
+                {
+                  backgroundColor:
+                    statusColor,
+                },
+              ]}
+            />
+          </View>
 
-            <Text style={styles.liveBadgeText}>
-              YOUR AI TUTOR IS READY
+          <View
+            style={
+              styles.connectionContent
+            }
+          >
+            <Text
+              style={[
+                styles.connectionTitle,
+                {
+                  color: statusColor,
+                },
+              ]}
+            >
+              {getStatusText(
+                serverStatus
+              )}
+            </Text>
+
+            <Text
+              style={
+                styles.connectionDescription
+              }
+            >
+              {getStatusDescription(
+                serverStatus
+              )}
+            </Text>
+          </View>
+
+          <Ionicons
+            name="refresh-outline"
+            size={21}
+            color="#71849B"
+          />
+        </Pressable>
+
+        <View style={styles.heroCard}>
+          <View style={styles.heroBadge}>
+            <Ionicons
+              name="sparkles"
+              size={15}
+              color="#70F7D4"
+            />
+
+            <Text
+              style={styles.heroBadgeText}
+            >
+              ADAPTIVE PRIVATE TUTOR
             </Text>
           </View>
 
           <Text style={styles.heroTitle}>
-            What would you like to{' '}
-            <Text style={styles.highlight}>learn today?</Text>
+            Learn through a{' '}
+            <Text style={styles.highlight}>
+              real conversation.
+            </Text>
           </Text>
 
-          <Text style={styles.heroDescription}>
-            Talk, type, upload a page or show Slickk what you are working on.
+          <Text
+            style={styles.heroDescription}
+          >
+            Speak naturally, ask follow-up
+            questions and let Slickk adapt each
+            explanation to your understanding.
           </Text>
 
           <Pressable
-            onPress={openTutor}
+            accessibilityRole="button"
+            accessibilityLabel="Start live lesson"
+            onPress={openLiveTutor}
             style={({ pressed }) => [
               styles.liveButton,
               pressed && styles.buttonPressed,
             ]}
           >
-            <View style={styles.liveButtonIcon}>
+            <View
+              style={
+                styles.liveButtonIcon
+              }
+            >
               <Ionicons
                 name="mic"
-                size={24}
+                size={25}
                 color="#081426"
               />
             </View>
 
-            <View style={styles.liveButtonText}>
-              <Text style={styles.liveButtonTitle}>
+            <View
+              style={
+                styles.liveButtonContent
+              }
+            >
+              <Text
+                style={
+                  styles.liveButtonTitle
+                }
+              >
                 Start live lesson
               </Text>
 
-              <Text style={styles.liveButtonSubtitle}>
-                Voice, camera and interactive teaching
+              <Text
+                style={
+                  styles.liveButtonSubtitle
+                }
+              >
+                Listen, respond and continue
+                automatically
               </Text>
             </View>
 
@@ -153,82 +458,150 @@ export default function SlickkDashboardScreen() {
               color="#081426"
             />
           </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open typed tutor"
+            onPress={openTypedTutor}
+            style={({ pressed }) => [
+              styles.typedButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons
+              name="chatbubble-ellipses-outline"
+              size={20}
+              color="#70F7D4"
+            />
+
+            <Text
+              style={styles.typedButtonText}
+            >
+              Continue with typed tutor
+            </Text>
+
+            <Ionicons
+              name="chevron-forward"
+              size={19}
+              color="#70F7D4"
+            />
+          </Pressable>
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
-            Quick learning tools
-          </Text>
+          <View>
+            <Text
+              style={
+                styles.sectionEyebrow
+              }
+            >
+              LEARNING SYSTEM
+            </Text>
 
-          <Pressable onPress={() => showNextFeature('All Tools')}>
-            <Text style={styles.sectionAction}>View all</Text>
+            <Text
+              style={styles.sectionTitle}
+            >
+              Quick tools
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={() =>
+              showComingSoon(
+                'Slickk Tools',
+                'More learning tools will appear here as each development stage is completed.'
+              )
+            }
+          >
+            <Text
+              style={styles.sectionAction}
+            >
+              View all
+            </Text>
           </Pressable>
         </View>
 
         <View style={styles.toolsGrid}>
           {QUICK_TOOLS.map((tool) => (
             <Pressable
-              key={tool.title}
-              onPress={() => {
-                if (
-                  tool.title === 'Voice Tutor' ||
-                  tool.title === 'Explain It'
-                ) {
-                  openTutor();
-                  return;
-                }
-
-                showNextFeature(tool.title);
-              }}
+              key={tool.id}
+              accessibilityRole="button"
+              accessibilityLabel={tool.title}
+              onPress={() =>
+                handleQuickTool(tool)
+              }
               style={({ pressed }) => [
                 styles.toolCard,
-                pressed && styles.cardPressed,
+                pressed && styles.pressed,
               ]}
             >
               <View style={styles.toolIcon}>
                 <Ionicons
-                  name={
-                    tool.icon as keyof typeof Ionicons.glyphMap
-                  }
+                  name={tool.icon}
                   size={25}
                   color="#70F7D4"
                 />
               </View>
 
-              <Text style={styles.toolTitle}>
+              <Text
+                style={styles.toolTitle}
+              >
                 {tool.title}
               </Text>
 
-              <Text style={styles.toolSubtitle}>
+              <Text
+                style={
+                  styles.toolSubtitle
+                }
+              >
                 {tool.subtitle}
               </Text>
+
+              <View
+                style={styles.toolArrow}
+              >
+                <Ionicons
+                  name="arrow-forward"
+                  size={16}
+                  color="#70F7D4"
+                />
+              </View>
             </Pressable>
           ))}
         </View>
 
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open Learning Twin"
           onPress={openLearningTwin}
           style={({ pressed }) => [
-            styles.learningTwinCard,
-            pressed && styles.cardPressed,
+            styles.twinCard,
+            pressed && styles.pressed,
           ]}
         >
-          <View style={styles.twinHeader}>
+          <View style={styles.twinTopRow}>
             <View style={styles.twinIcon}>
               <Ionicons
-                name="sparkles"
-                size={24}
+                name="analytics-outline"
+                size={25}
                 color="#70F7D4"
               />
             </View>
 
-            <View style={styles.twinHeading}>
-              <Text style={styles.twinLabel}>
+            <View
+              style={styles.twinHeading}
+            >
+              <Text
+                style={styles.twinLabel}
+              >
                 LEARNING TWIN
               </Text>
 
-              <Text style={styles.twinTitle}>
-                Slickk is beginning to understand you
+              <Text
+                style={styles.twinTitle}
+              >
+                Your personal learning
+                intelligence
               </Text>
             </View>
 
@@ -239,129 +612,231 @@ export default function SlickkDashboardScreen() {
             />
           </View>
 
-          <Text style={styles.twinDescription}>
-            Complete lessons and mastery checks to build your personalised
-            learning intelligence.
+          <Text
+            style={styles.twinDescription}
+          >
+            Slickk tracks topics, skills,
+            confusion signals and mastery
+            evidence to choose what you should
+            learn next.
           </Text>
 
-          <View style={styles.progressRow}>
-            <Text style={styles.progressLabel}>
-              Profile intelligence
+          <View style={styles.progressHeader}>
+            <Text
+              style={styles.progressLabel}
+            >
+              Twin development
             </Text>
 
-            <Text style={styles.progressValue}>12%</Text>
+            <Text
+              style={styles.progressValue}
+            >
+              12%
+            </Text>
           </View>
 
           <View style={styles.progressTrack}>
-            <View style={styles.progressFill} />
+            <View
+              style={styles.progressFill}
+            />
           </View>
 
-          <View style={styles.twinStats}>
+          <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>0</Text>
-              <Text style={styles.statLabel}>Lessons</Text>
-            </View>
+              <Text
+                style={styles.statValue}
+              >
+                0
+              </Text>
 
-            <View style={styles.statDivider} />
-
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>0</Text>
-              <Text style={styles.statLabel}>
-                Skills mastered
+              <Text
+                style={styles.statLabel}
+              >
+                Lessons
               </Text>
             </View>
 
             <View style={styles.statDivider} />
 
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>1</Text>
-              <Text style={styles.statLabel}>Day streak</Text>
+              <Text
+                style={styles.statValue}
+              >
+                0
+              </Text>
+
+              <Text
+                style={styles.statLabel}
+              >
+                Mastered
+              </Text>
+            </View>
+
+            <View style={styles.statDivider} />
+
+            <View style={styles.statItem}>
+              <Text
+                style={styles.statValue}
+              >
+                1
+              </Text>
+
+              <Text
+                style={styles.statLabel}
+              >
+                Day streak
+              </Text>
             </View>
           </View>
         </Pressable>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
-            Continue by subject
-          </Text>
+          <View>
+            <Text
+              style={
+                styles.sectionEyebrow
+              }
+            >
+              CURRICULUM
+            </Text>
+
+            <Text
+              style={styles.sectionTitle}
+            >
+              Choose a subject
+            </Text>
+          </View>
         </View>
 
         <View style={styles.subjectList}>
           {SUBJECTS.map((subject) => (
             <Pressable
-              key={subject.name}
-              onPress={() => showNextFeature(subject.name)}
+              key={subject.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Learn ${subject.title}`}
+              onPress={() =>
+                openSubject(subject)
+              }
               style={({ pressed }) => [
                 styles.subjectCard,
-                pressed && styles.cardPressed,
+                pressed && styles.pressed,
               ]}
             >
-              <View style={styles.subjectIcon}>
+              <View
+                style={styles.subjectIcon}
+              >
                 <Ionicons
-                  name={
-                    subject.icon as keyof typeof Ionicons.glyphMap
-                  }
-                  size={23}
+                  name={subject.icon}
+                  size={24}
                   color="#70F7D4"
                 />
               </View>
 
-              <Text style={styles.subjectName}>
-                {subject.name}
-              </Text>
+              <View
+                style={
+                  styles.subjectContent
+                }
+              >
+                <Text
+                  style={
+                    styles.subjectTitle
+                  }
+                >
+                  {subject.title}
+                </Text>
+
+                <Text
+                  style={
+                    styles.subjectSubtitle
+                  }
+                >
+                  {subject.subtitle}
+                </Text>
+              </View>
 
               <Ionicons
                 name="chevron-forward"
-                size={20}
-                color="#65748A"
+                size={21}
+                color="#62748B"
               />
             </Pressable>
           ))}
         </View>
 
         <Pressable
-          onPress={() => showNextFeature('Personal Study Plan')}
+          accessibilityRole="button"
+          accessibilityLabel="Create adaptive study plan"
+          onPress={openStudyPlan}
           style={({ pressed }) => [
-            styles.planCard,
+            styles.studyPlanCard,
             pressed && styles.buttonPressed,
           ]}
         >
-          <View style={styles.planIcon}>
+          <View
+            style={styles.studyPlanIcon}
+          >
             <Ionicons
-              name="calendar"
-              size={24}
+              name="calendar-outline"
+              size={25}
               color="#081426"
             />
           </View>
 
-          <View style={styles.planText}>
-            <Text style={styles.planTitle}>
-              Create today’s study plan
+          <View
+            style={
+              styles.studyPlanContent
+            }
+          >
+            <Text
+              style={
+                styles.studyPlanTitle
+              }
+            >
+              Build today’s study plan
             </Text>
 
-            <Text style={styles.planDescription}>
-              Slickk will organise subjects, lessons and revision around your
-              available time.
+            <Text
+              style={
+                styles.studyPlanDescription
+              }
+            >
+              Lessons, revision and mastery
+              checks arranged around your time.
             </Text>
           </View>
 
           <Ionicons
             name="arrow-forward"
-            size={21}
+            size={22}
             color="#081426"
           />
         </Pressable>
 
-        <View style={styles.privacyRow}>
+        <View style={styles.privacyCard}>
           <Ionicons
             name="shield-checkmark-outline"
-            size={18}
-            color="#6F829B"
+            size={21}
+            color="#70F7D4"
           />
 
-          <Text style={styles.privacyText}>
-            Your lessons and Learning Twin data remain under your control.
-          </Text>
+          <View
+            style={styles.privacyContent}
+          >
+            <Text
+              style={styles.privacyTitle}
+            >
+              Private by design
+            </Text>
+
+            <Text
+              style={
+                styles.privacyDescription
+              }
+            >
+              Your local tutor and Learning Twin
+              remain under your control.
+            </Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -377,20 +852,33 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 52 : 22,
-    paddingBottom: 42,
+    paddingTop:
+      Platform.OS === 'android' ? 52 : 22,
+    paddingBottom: 44,
     backgroundColor: '#07101E',
     overflow: 'hidden',
   },
 
-  glow: {
+  topGlow: {
     position: 'absolute',
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    top: -140,
-    right: -100,
-    backgroundColor: 'rgba(63, 230, 195, 0.09)',
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    top: -155,
+    right: -110,
+    backgroundColor:
+      'rgba(112, 247, 212, 0.09)',
+  },
+
+  sideGlow: {
+    position: 'absolute',
+    width: 230,
+    height: 230,
+    borderRadius: 115,
+    top: 460,
+    left: -185,
+    backgroundColor:
+      'rgba(64, 139, 255, 0.06)',
   },
 
   header: {
@@ -403,62 +891,105 @@ const styles = StyleSheet.create({
     color: '#718096',
     fontSize: 10,
     fontWeight: '900',
-    letterSpacing: 1.6,
+    letterSpacing: 1.7,
   },
 
   brand: {
     color: '#FFFFFF',
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '900',
-    letterSpacing: 3,
+    letterSpacing: 3.2,
     marginTop: 3,
   },
 
   profileButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+    width: 49,
+    height: 49,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#213149',
-    backgroundColor: '#0D192A',
+    borderColor: '#22344B',
+    backgroundColor: '#0C192A',
+  },
+
+  connectionCard: {
+    minHeight: 74,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    marginTop: 25,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#1A2C42',
+    backgroundColor: '#0A1727',
+  },
+
+  connectionIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    backgroundColor: '#101E2F',
+  },
+
+  connectionDot: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+  },
+
+  connectionContent: {
+    flex: 1,
+    marginHorizontal: 12,
+  },
+
+  connectionTitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+  },
+
+  connectionDescription: {
+    color: '#7F90A6',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 4,
   },
 
   heroCard: {
     padding: 21,
-    marginTop: 28,
-    borderRadius: 25,
+    marginTop: 17,
+    borderRadius: 26,
     borderWidth: 1,
-    borderColor: '#1B3145',
-    backgroundColor: '#0B1A2B',
+    borderColor: '#1C3448',
+    backgroundColor: '#0A1A2B',
   },
 
-  liveBadge: {
+  heroBadge: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#102B31',
   },
 
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#70F7D4',
-  },
-
-  liveBadgeText: {
-    color: '#8EA0B6',
-    fontSize: 10,
+  heroBadgeText: {
+    color: '#70F7D4',
+    fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 1.2,
+    letterSpacing: 1.1,
   },
 
   heroTitle: {
     color: '#FFFFFF',
     fontSize: 31,
-    lineHeight: 37,
+    lineHeight: 38,
     fontWeight: '900',
     letterSpacing: -0.8,
     marginTop: 18,
@@ -472,11 +1003,11 @@ const styles = StyleSheet.create({
     color: '#95A4B9',
     fontSize: 14,
     lineHeight: 21,
-    marginTop: 12,
+    marginTop: 11,
   },
 
   liveButton: {
-    minHeight: 74,
+    minHeight: 75,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
@@ -486,15 +1017,16 @@ const styles = StyleSheet.create({
   },
 
   liveButtonIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
+    width: 47,
+    height: 47,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(8, 20, 38, 0.10)',
+    backgroundColor:
+      'rgba(8, 20, 38, 0.11)',
   },
 
-  liveButtonText: {
+  liveButtonContent: {
     flex: 1,
     marginHorizontal: 13,
   },
@@ -512,22 +1044,45 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
-  buttonPressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.99 }],
+  typedButton: {
+    minHeight: 49,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#235046',
+    backgroundColor: '#0C282A',
+  },
+
+  typedButtonText: {
+    flex: 1,
+    color: '#C9FAEE',
+    fontSize: 12,
+    fontWeight: '800',
   },
 
   sectionHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
-    marginTop: 31,
+    marginTop: 32,
     marginBottom: 14,
   },
 
+  sectionEyebrow: {
+    color: '#63768E',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+    marginBottom: 4,
+  },
+
   sectionTitle: {
-    color: '#F2F6FC',
-    fontSize: 18,
+    color: '#F3F7FC',
+    fontSize: 19,
     fontWeight: '900',
   },
 
@@ -546,17 +1101,17 @@ const styles = StyleSheet.create({
 
   toolCard: {
     width: '48.3%',
-    minHeight: 145,
+    minHeight: 157,
     padding: 16,
-    borderRadius: 21,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#182A40',
-    backgroundColor: '#0B1727',
+    borderColor: '#192C42',
+    backgroundColor: '#0A1727',
   },
 
   toolIcon: {
-    width: 45,
-    height: 45,
+    width: 46,
+    height: 46,
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
@@ -564,45 +1119,52 @@ const styles = StyleSheet.create({
   },
 
   toolTitle: {
-    color: '#F0F5FB',
+    color: '#F2F6FC',
     fontSize: 15,
     fontWeight: '900',
-    marginTop: 15,
+    marginTop: 14,
   },
 
   toolSubtitle: {
-    color: '#7F8EA4',
-    fontSize: 12,
-    lineHeight: 17,
+    color: '#7E8FA5',
+    fontSize: 11,
+    lineHeight: 16,
     marginTop: 4,
   },
 
-  cardPressed: {
-    opacity: 0.7,
-    transform: [{ scale: 0.98 }],
+  toolArrow: {
+    position: 'absolute',
+    right: 14,
+    bottom: 14,
+    width: 29,
+    height: 29,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#102B31',
   },
 
-  learningTwinCard: {
+  twinCard: {
     padding: 19,
     marginTop: 30,
-    borderRadius: 24,
+    borderRadius: 25,
     borderWidth: 1,
-    borderColor: '#1B4144',
-    backgroundColor: '#0A222A',
+    borderColor: '#1B4846',
+    backgroundColor: '#092329',
   },
 
-  twinHeader: {
+  twinTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
 
   twinIcon: {
-    width: 48,
-    height: 48,
+    width: 49,
+    height: 49,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#103139',
+    backgroundColor: '#10343A',
   },
 
   twinHeading: {
@@ -618,7 +1180,7 @@ const styles = StyleSheet.create({
   },
 
   twinTitle: {
-    color: '#EDFFFB',
+    color: '#F0FFFC',
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '900',
@@ -626,20 +1188,20 @@ const styles = StyleSheet.create({
   },
 
   twinDescription: {
-    color: '#86A0A5',
+    color: '#8EA5A8',
     fontSize: 13,
     lineHeight: 19,
-    marginTop: 15,
+    marginTop: 16,
   },
 
-  progressRow: {
+  progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 19,
   },
 
   progressLabel: {
-    color: '#98AEB1',
+    color: '#99AEB1',
     fontSize: 11,
     fontWeight: '700',
   },
@@ -654,7 +1216,7 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 10,
     marginTop: 8,
-    backgroundColor: '#17363B',
+    backgroundColor: '#18383C',
     overflow: 'hidden',
   },
 
@@ -665,7 +1227,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#70F7D4',
   },
 
-  twinStats: {
+  statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 22,
@@ -683,7 +1245,7 @@ const styles = StyleSheet.create({
   },
 
   statLabel: {
-    color: '#71868C',
+    color: '#71878D',
     fontSize: 9,
     textAlign: 'center',
     marginTop: 4,
@@ -692,7 +1254,7 @@ const styles = StyleSheet.create({
   statDivider: {
     width: 1,
     height: 31,
-    backgroundColor: '#1B4247',
+    backgroundColor: '#1B4447',
   },
 
   subjectList: {
@@ -700,84 +1262,116 @@ const styles = StyleSheet.create({
   },
 
   subjectCard: {
-    minHeight: 68,
+    minHeight: 76,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 15,
-    borderRadius: 19,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#182A40',
-    backgroundColor: '#0B1727',
+    borderColor: '#192C42',
+    backgroundColor: '#0A1727',
   },
 
   subjectIcon: {
-    width: 43,
-    height: 43,
-    borderRadius: 14,
+    width: 46,
+    height: 46,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#10283A',
   },
 
-  subjectName: {
+  subjectContent: {
     flex: 1,
-    color: '#EAF0F8',
-    fontSize: 15,
-    fontWeight: '800',
     marginLeft: 14,
   },
 
-  planCard: {
-    minHeight: 104,
+  subjectTitle: {
+    color: '#EDF3FA',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  subjectSubtitle: {
+    color: '#71849A',
+    fontSize: 11,
+    marginTop: 4,
+  },
+
+  studyPlanCard: {
+    minHeight: 108,
     flexDirection: 'row',
     alignItems: 'center',
     padding: 17,
     marginTop: 30,
-    borderRadius: 22,
+    borderRadius: 23,
     backgroundColor: '#70F7D4',
   },
 
-  planIcon: {
-    width: 48,
-    height: 48,
+  studyPlanIcon: {
+    width: 49,
+    height: 49,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(8, 20, 38, 0.10)',
+    backgroundColor:
+      'rgba(8, 20, 38, 0.11)',
   },
 
-  planText: {
+  studyPlanContent: {
     flex: 1,
     marginHorizontal: 13,
   },
 
-  planTitle: {
+  studyPlanTitle: {
     color: '#081426',
     fontSize: 15,
     fontWeight: '900',
   },
 
-  planDescription: {
+  studyPlanDescription: {
     color: '#315B58',
     fontSize: 11,
     lineHeight: 16,
     marginTop: 4,
   },
 
-  privacyRow: {
+  privacyCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 23,
-    paddingHorizontal: 15,
+    padding: 15,
+    marginTop: 21,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#193343',
+    backgroundColor: '#0A1B28',
   },
 
-  privacyText: {
-    flexShrink: 1,
-    color: '#5F7087',
+  privacyContent: {
+    flex: 1,
+    marginLeft: 11,
+  },
+
+  privacyTitle: {
+    color: '#DCE8F0',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  privacyDescription: {
+    color: '#63778C',
     fontSize: 10,
     lineHeight: 15,
-    textAlign: 'center',
+    marginTop: 3,
+  },
+
+  pressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.98 }],
+  },
+
+  buttonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.99 }],
   },
 });
