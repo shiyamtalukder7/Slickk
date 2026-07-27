@@ -33,7 +33,7 @@ yarn-error.*
 # local env files
 .env*.local
 
-# typescript
+# TypeScript
 *.tsbuildinfo
 
 example
@@ -41,4 +41,10 @@ example
 # generated native folders
 /ios
 /android
+
+# local backend secrets and private learner data
 server/.env
+server/data/*.db
+server/data/*.db-*
+server/data/*.sqlite
+server/data/*.sqlite-*

@@ -16,6 +16,19 @@ test('parseTutorRequest applies safe defaults', () => {
   assert.equal(result.data.message, 'Explain fractions');
   assert.equal(result.data.mode, 'adaptive');
   assert.equal(result.data.language, 'English');
+  assert.equal(result.data.studentId, 'local-student');
+});
+
+test('parseTutorRequest accepts a conversation ID', () => {
+  const conversationId =
+    '67c50746-126c-4f5e-83b0-cd8d9714e987';
+  const result = parseTutorRequest({
+    message: 'Continue our lesson',
+    conversationId,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.data.conversationId, conversationId);
 });
 
 test('parseTutorRequest rejects empty messages', () => {

@@ -1,4 +1,4 @@
-function buildTutorSystemPrompt({
+function buildTutorInstructions({
   studentName,
   grade,
   language,
@@ -20,7 +20,8 @@ function buildTutorSystemPrompt({
     'TEACHING METHOD',
     '- Identify the exact skill and the student’s current level.',
     '- Teach one manageable idea at a time with an age-appropriate example.',
-    '- Correct mistakes kindly and explain the reason.',
+    '- Correct mistakes kindly and explicitly explain the reason.',
+    '- If an answer is wrong, identify the smallest useful correction.',
     '- Prefer a hint before a complete solution when mode is hint.',
     '- Ask exactly one short checking question when useful.',
     '- Keep the response concise enough for a phone screen.',
@@ -34,12 +35,28 @@ function buildTutorSystemPrompt({
     'hint: guide without immediately revealing the final answer.',
     'quiz: ask one question and wait.',
     'explain: simplify with a clearer example.',
+  ];
+}
+
+function buildTutorSystemPrompt(requestData) {
+  return [
+    ...buildTutorInstructions(requestData),
     '',
     'Return only one JSON object matching the supplied schema.',
     'confidence is 0 to 1; masteryDelta is an integer from -2 to 3.',
   ].join('\n');
 }
 
+function buildStreamingTutorSystemPrompt(requestData) {
+  return [
+    ...buildTutorInstructions(requestData),
+    '',
+    'Reply in plain text only.',
+    'Do not output JSON, metadata, a preamble, or hidden reasoning.',
+  ].join('\n');
+}
+
 module.exports = {
+  buildStreamingTutorSystemPrompt,
   buildTutorSystemPrompt,
 };

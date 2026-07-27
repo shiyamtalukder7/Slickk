@@ -53,12 +53,8 @@ function readMetrics(data) {
   };
 }
 
-async function fetchJson(path, options = {}) {
+function createAbortContext(parentSignal, timeoutMs) {
   const controller = new AbortController();
-  const parentSignal = options.signal;
-  const fetchOptions = { ...options };
-  delete fetchOptions.signal;
-  delete fetchOptions.timeoutMs;
   let timedOut = false;
 
   const abortFromParent = () => {
@@ -76,74 +72,103 @@ async function fetchJson(path, options = {}) {
   const timeout = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, options.timeoutMs ?? config.requestTimeoutMs);
+  }, timeoutMs);
+
+  return {
+    controller,
+    didTimeOut: () => timedOut,
+    cleanup() {
+      clearTimeout(timeout);
+      parentSignal?.removeEventListener(
+        'abort',
+        abortFromParent
+      );
+    },
+  };
+}
+
+function translateFetchError(error, timedOut) {
+  if (error instanceof OllamaError) {
+    return error;
+  }
+
+  if (error?.name === 'AbortError') {
+    return new OllamaError(
+      timedOut
+        ? 'The local tutor took too long to answer.'
+        : 'The tutor request was cancelled.',
+      timedOut ? 'OLLAMA_TIMEOUT' : 'REQUEST_CANCELLED',
+      timedOut ? 504 : 499
+    );
+  }
+
+  return new OllamaError(
+    'Slickk could not connect to Ollama.',
+    'OLLAMA_UNREACHABLE',
+    503,
+    { cause: error?.message || String(error) }
+  );
+}
+
+async function parseErrorResponse(response) {
+  let message = '';
+
+  try {
+    const data = await response.json();
+    message = typeof data?.error === 'string' ? data.error : '';
+  } catch {
+    message = '';
+  }
+
+  const modelMissing =
+    response.status === 404 ||
+    /model.+(not found|does not exist)/i.test(message);
+
+  return new OllamaError(
+    modelMissing
+      ? `The Ollama model "${config.ollamaModel}" is not installed.`
+      : message || 'Ollama could not complete the request.',
+    modelMissing ? 'MODEL_NOT_FOUND' : 'OLLAMA_RESPONSE_ERROR',
+    modelMissing ? 503 : 502,
+    { ollamaStatus: response.status }
+  );
+}
+
+async function fetchJson(path, options = {}) {
+  const abortContext = createAbortContext(
+    options.signal,
+    options.timeoutMs ?? config.requestTimeoutMs
+  );
+  const fetchOptions = { ...options };
+  delete fetchOptions.signal;
+  delete fetchOptions.timeoutMs;
 
   try {
     const response = await fetch(`${config.ollamaUrl}${path}`, {
       ...fetchOptions,
-      signal: controller.signal,
+      signal: abortContext.controller.signal,
     });
 
-    const rawBody = await response.text();
-    let data = {};
-
-    if (rawBody) {
-      try {
-        data = JSON.parse(rawBody);
-      } catch {
-        throw new OllamaError(
-          'Ollama returned an unreadable response.',
-          'INVALID_RESPONSE',
-          502
-        );
-      }
-    }
-
     if (!response.ok) {
-      const ollamaMessage =
-        typeof data?.error === 'string' ? data.error : '';
-      const modelMissing =
-        response.status === 404 ||
-        /model.+(not found|does not exist)/i.test(ollamaMessage);
-
-      throw new OllamaError(
-        modelMissing
-          ? `The Ollama model "${config.ollamaModel}" is not installed.`
-          : ollamaMessage || 'Ollama could not complete the request.',
-        modelMissing ? 'MODEL_NOT_FOUND' : 'OLLAMA_RESPONSE_ERROR',
-        modelMissing ? 503 : 502,
-        { ollamaStatus: response.status }
-      );
+      throw await parseErrorResponse(response);
     }
 
-    return data;
+    try {
+      return await response.json();
+    } catch {
+      throw new OllamaError(
+        'Ollama returned an unreadable response.',
+        'INVALID_RESPONSE',
+        502
+      );
+    }
   } catch (error) {
-    if (error instanceof OllamaError) {
-      throw error;
-    }
-
-    if (error?.name === 'AbortError') {
-      throw new OllamaError(
-        timedOut
-          ? 'The local tutor took too long to answer.'
-          : 'The tutor request was cancelled.',
-        timedOut ? 'OLLAMA_TIMEOUT' : 'REQUEST_CANCELLED',
-        timedOut ? 504 : 499
-      );
-    }
-
-    throw new OllamaError(
-      'Slickk could not connect to Ollama.',
-      'OLLAMA_UNREACHABLE',
-      503,
-      { cause: error?.message || String(error) }
+    throw translateFetchError(
+      error,
+      abortContext.didTimeOut()
     );
   } finally {
-    clearTimeout(timeout);
-    parentSignal?.removeEventListener(
-      'abort',
-      abortFromParent
-    );
+    abortContext.cleanup();
   }
 }
 
@@ -177,6 +202,24 @@ async function checkOllamaHealth() {
   };
 }
 
+function tutorRequestBody(messages, stream, format) {
+  return {
+    model: config.ollamaModel,
+    stream,
+    think: config.ollamaThink,
+    ...(format ? { format } : {}),
+    keep_alive: config.ollamaKeepAlive,
+    messages,
+    options: {
+      temperature: 0.25,
+      top_p: 0.9,
+      repeat_penalty: 1.08,
+      num_ctx: config.numContext,
+      num_predict: config.numPredict,
+    },
+  };
+}
+
 async function generateTutorResult({
   messages,
   format,
@@ -188,21 +231,9 @@ async function generateTutorResult({
       'Content-Type': 'application/json',
     },
     signal,
-    body: JSON.stringify({
-      model: config.ollamaModel,
-      stream: false,
-      think: config.ollamaThink,
-      format,
-      keep_alive: config.ollamaKeepAlive,
-      messages,
-      options: {
-        temperature: 0.25,
-        top_p: 0.9,
-        repeat_penalty: 1.08,
-        num_ctx: config.numContext,
-        num_predict: config.numPredict,
-      },
-    }),
+    body: JSON.stringify(
+      tutorRequestBody(messages, false, format)
+    ),
   });
 
   const content = data?.message?.content?.trim();
@@ -221,6 +252,132 @@ async function generateTutorResult({
   };
 }
 
+async function streamTutorResult({
+  messages,
+  signal,
+  onToken,
+}) {
+  const abortContext = createAbortContext(
+    signal,
+    config.requestTimeoutMs
+  );
+  let reader;
+
+  try {
+    const response = await fetch(
+      `${config.ollamaUrl}/api/chat`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: abortContext.controller.signal,
+        body: JSON.stringify(
+          tutorRequestBody(messages, true)
+        ),
+      }
+    );
+
+    if (!response.ok) {
+      throw await parseErrorResponse(response);
+    }
+
+    if (!response.body) {
+      throw new OllamaError(
+        'Ollama streaming is unavailable.',
+        'STREAM_UNAVAILABLE',
+        502
+      );
+    }
+
+    reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let reply = '';
+    let finalChunk = {};
+
+    async function processLine(line) {
+      if (!line.trim()) {
+        return;
+      }
+
+      let chunk;
+
+      try {
+        chunk = JSON.parse(line);
+      } catch {
+        throw new OllamaError(
+          'Ollama returned an invalid stream chunk.',
+          'INVALID_STREAM',
+          502
+        );
+      }
+
+      if (chunk?.error) {
+        throw new OllamaError(
+          String(chunk.error),
+          'OLLAMA_STREAM_ERROR',
+          502
+        );
+      }
+
+      const token = chunk?.message?.content;
+
+      if (typeof token === 'string' && token) {
+        reply += token;
+        await onToken(token);
+      }
+
+      if (chunk?.done) {
+        finalChunk = chunk;
+      }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        await processLine(line);
+      }
+    }
+
+    buffer += decoder.decode();
+
+    if (buffer.trim()) {
+      await processLine(buffer);
+    }
+
+    if (!reply.trim()) {
+      throw new OllamaError(
+        'The local model returned an empty answer.',
+        'EMPTY_RESPONSE',
+        502
+      );
+    }
+
+    return {
+      content: reply.trim(),
+      metrics: readMetrics(finalChunk),
+    };
+  } catch (error) {
+    throw translateFetchError(
+      error,
+      abortContext.didTimeOut()
+    );
+  } finally {
+    await reader?.cancel().catch(() => {});
+    abortContext.cleanup();
+  }
+}
+
 module.exports = {
   OllamaError,
   calculateTokensPerSecond,
@@ -230,4 +387,5 @@ module.exports = {
   nanosecondsToMilliseconds,
   normalizeModelNames,
   readMetrics,
+  streamTutorResult,
 };

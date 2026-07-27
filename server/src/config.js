@@ -2,8 +2,10 @@ const path = require('node:path');
 
 const dotenv = require('dotenv');
 
+const serverRoot = path.join(__dirname, '..');
+
 dotenv.config({
-  path: path.join(__dirname, '..', '.env'),
+  path: path.join(serverRoot, '.env'),
   quiet: true,
 });
 
@@ -40,6 +42,23 @@ function readOrigins() {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+}
+
+function resolveDatabasePath() {
+  const configuredPath =
+    process.env.SLICKK_DATABASE_PATH?.trim();
+
+  if (!configuredPath) {
+    return path.join(serverRoot, 'data', 'slickk.db');
+  }
+
+  if (configuredPath === ':memory:') {
+    return configuredPath;
+  }
+
+  return path.isAbsolute(configuredPath)
+    ? configuredPath
+    : path.resolve(serverRoot, configuredPath);
 }
 
 const config = Object.freeze({
@@ -80,10 +99,12 @@ const config = Object.freeze({
     30
   ),
   corsOrigins: readOrigins(),
+  databasePath: resolveDatabasePath(),
 });
 
 module.exports = {
   config,
   readBoolean,
   readInteger,
+  resolveDatabasePath,
 };

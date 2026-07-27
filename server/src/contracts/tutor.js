@@ -18,6 +18,13 @@ const historyMessageSchema = z.object({
 const tutorRequestSchema = z.object({
   message: z.string().trim().min(1).max(12000),
   studentName: z.string().trim().min(1).max(80).default('Student'),
+  studentId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .default('local-student'),
+  conversationId: z.string().uuid().optional(),
   grade: z.string().trim().min(1).max(80).default('General'),
   language: z.string().trim().min(1).max(50).default('English'),
   mode: z.enum(tutorModes).default('adaptive'),

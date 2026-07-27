@@ -12,6 +12,7 @@ server.listen(config.port, '0.0.0.0', () => {
   console.log(' SLICKK LOCAL INTELLIGENCE IS ONLINE');
   console.log(` Port: ${config.port}`);
   console.log(` Model: ${config.ollamaModel}`);
+  console.log(` Database: ${config.databasePath}`);
   console.log(` Environment: ${config.nodeEnv}`);
   console.log('========================================');
   console.log('');
@@ -21,6 +22,7 @@ function shutdown(signal) {
   console.log(`\n${signal} received. Closing Slickk safely...`);
 
   server.close(() => {
+    app.locals.conversationStore?.close();
     process.exit(0);
   });
 
