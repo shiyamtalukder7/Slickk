@@ -21,6 +21,10 @@ const {
   ConversationStoreError,
   createConversationStore,
 } = require('./storage/conversations');
+const {
+  createCurriculumStore,
+  CurriculumStoreError,
+} = require('./storage/curriculum');
 
 function corsOptions(request, callback) {
   const origin = request.header('Origin');
@@ -38,7 +42,8 @@ function corsOptions(request, callback) {
 function errorStatus(error) {
   if (
     error instanceof OllamaError ||
-    error instanceof ConversationStoreError
+    error instanceof ConversationStoreError ||
+    error instanceof CurriculumStoreError
   ) {
     return error.status;
   }
@@ -49,7 +54,8 @@ function errorStatus(error) {
 function errorCode(error) {
   if (
     error instanceof OllamaError ||
-    error instanceof ConversationStoreError
+    error instanceof ConversationStoreError ||
+    error instanceof CurriculumStoreError
   ) {
     return error.code;
   }
@@ -67,8 +73,11 @@ function createApp(options = {}) {
   const app = express();
   const conversationStore =
     options.conversationStore || createConversationStore();
+  const curriculumStore =
+    options.curriculumStore || createCurriculumStore();
 
   app.locals.conversationStore = conversationStore;
+  app.locals.curriculumStore = curriculumStore;
 
   app.disable('x-powered-by');
   app.use(cors(corsOptions));
@@ -127,10 +136,13 @@ function createApp(options = {}) {
       history,
       learnerProfile,
     });
+    const curriculumEvidence =
+      curriculumStore.search(requestData.message, 4);
     const enrichedRequestData = {
       ...requestData,
       pedagogyPlan,
       learnerMemory: pedagogyPlan.relevantMemory,
+      curriculumEvidence,
     };
 
     const studentMessage = conversationStore.saveMessage({
@@ -145,6 +157,7 @@ function createApp(options = {}) {
       history,
       learnerProfile,
       pedagogyPlan,
+      curriculumEvidence,
       requestData: enrichedRequestData,
       studentMessage,
     };
@@ -166,7 +179,7 @@ function createApp(options = {}) {
     response.json({
       status: 'online',
       service: 'Slickk Local Intelligence Core',
-      version: '4.0.0',
+      version: '5.0.0',
       provider: 'ollama',
       model: config.ollamaModel,
       storage: 'local-sqlite',
@@ -176,6 +189,8 @@ function createApp(options = {}) {
         'persistent conversations',
         'persistent learner profiles',
         'subject-aware pedagogy',
+        'page-grounded curriculum retrieval',
+        'Bangla and English textbook search',
         'deterministic tutor orchestration',
         'multilingual teaching',
         'misconception detection',
@@ -243,6 +258,49 @@ function createApp(options = {}) {
       });
     }
   );
+
+  app.get('/api/documents', (request, response) => {
+    return response.json({
+      documents: curriculumStore.listDocuments(),
+      requestId: request.requestId,
+    });
+  });
+
+  app.post('/api/documents/search', (request, response) => {
+    const query = String(request.body?.query || '').trim();
+    const requestedLimit = Number(request.body?.limit);
+
+    if (!query || query.length > 1000) {
+      return response.status(400).json({
+        error: 'Please provide a textbook search query.',
+        code: 'INVALID_DOCUMENT_QUERY',
+        requestId: request.requestId,
+      });
+    }
+
+    try {
+      const results = curriculumStore
+        .search(
+          query,
+          Number.isInteger(requestedLimit)
+            ? requestedLimit
+            : 5
+        )
+        .map(({ content, ...citation }) => citation);
+
+      return response.json({
+        query,
+        results,
+        requestId: request.requestId,
+      });
+    } catch (error) {
+      return response.status(errorStatus(error)).json({
+        error: error.message,
+        code: errorCode(error),
+        requestId: request.requestId,
+      });
+    }
+  });
 
   app.get('/api/conversations', (request, response) => {
     const studentId =
@@ -321,6 +379,9 @@ function createApp(options = {}) {
         context,
         tutorResult
       );
+      const citations = context.curriculumEvidence.map(
+        ({ content, ...citation }) => citation
+      );
 
       return response.json({
         reply: tutorResult.reply,
@@ -333,6 +394,7 @@ function createApp(options = {}) {
           masteryDelta: tutorResult.masteryDelta,
         },
         learnerProfile,
+        citations,
         metadata: {
           provider: 'ollama',
           model: config.ollamaModel,
@@ -346,6 +408,9 @@ function createApp(options = {}) {
           requestId: request.requestId,
           conversationId: context.conversation.id,
           messageId: tutorMessage.id,
+          grounding: citations.length > 0
+            ? 'curriculum'
+            : 'model-only',
           performance: metrics,
         },
       });
@@ -368,7 +433,8 @@ function createApp(options = {}) {
       return response.status(status).json({
         error:
           error instanceof OllamaError ||
-          error instanceof ConversationStoreError
+          error instanceof ConversationStoreError ||
+          error instanceof CurriculumStoreError
             ? error.message
             : 'Slickk could not prepare the tutor response.',
         code: errorCode(error),
@@ -423,6 +489,8 @@ function createApp(options = {}) {
         subject: context.pedagogyPlan.subject,
         lessonState:
           context.pedagogyPlan.lessonState,
+        grounded:
+          context.curriculumEvidence.length > 0,
       });
 
       const result = await streamTutor(
@@ -455,6 +523,9 @@ function createApp(options = {}) {
         context,
         learningTwin
       );
+      const citations = context.curriculumEvidence.map(
+        ({ content, ...citation }) => citation
+      );
 
       writeStreamEvent(response, {
         type: 'complete',
@@ -463,6 +534,7 @@ function createApp(options = {}) {
         messageId: tutorMessage.id,
         learningTwin,
         learnerProfile,
+        citations,
         metadata: {
           provider: 'ollama',
           model: config.ollamaModel,
@@ -470,6 +542,9 @@ function createApp(options = {}) {
           subject: context.pedagogyPlan.subject,
           lessonState:
             context.pedagogyPlan.lessonState,
+          grounding: citations.length > 0
+            ? 'curriculum'
+            : 'model-only',
           performance: result.metrics,
           generatedAt: new Date().toISOString(),
         },

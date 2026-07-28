@@ -129,15 +129,44 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
   const {
     createConversationStore,
   } = require('../src/storage/conversations');
+  const {
+    createCurriculumStore,
+  } = require('../src/storage/curriculum');
   const conversationStore =
     createConversationStore(':memory:');
+  const curriculumStore =
+    createCurriculumStore(':memory:');
+  curriculumStore.importDocument({
+    sha256: 'integration-textbook-hash',
+    metadata: {
+      title: 'Primary Mathematics',
+      curriculum: 'NCTB',
+      academicYear: '2026',
+      grade: 'Class 3',
+      subject: 'Mathematics',
+      language: 'English',
+      version: 'English Version',
+      sourceUrl: 'https://nctb.gov.bd/math.pdf',
+      rights: 'official-public',
+    },
+    pages: [
+      {
+        pageNumber: 21,
+        text: 'What is 12 minus 5? Subtraction means taking one quantity away from another.',
+      },
+    ],
+  });
   const gateway = createServer(
-    createApp({ conversationStore })
+    createApp({
+      conversationStore,
+      curriculumStore,
+    })
   );
   const gatewayPort = await listen(gateway);
 
   context.after(async () => {
     conversationStore.close();
+    curriculumStore.close();
     await close(gateway);
     await close(fakeOllama);
   });
@@ -191,6 +220,7 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
 
   assert.equal(streamResponse.status, 200);
   assert.equal(streamEvents[0].type, 'start');
+  assert.equal(streamEvents[0].grounded, true);
   assert.equal(
     streamEvents
       .filter((event) => event.type === 'token')
@@ -203,6 +233,15 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
     conversationId
   );
   assert.equal(streamEvents.at(-1).type, 'complete');
+  assert.equal(
+    streamEvents.at(-1).citations[0].documentTitle,
+    'Primary Mathematics'
+  );
+  assert.equal(streamEvents.at(-1).citations[0].page, 21);
+  assert.equal(
+    streamEvents.at(-1).metadata.grounding,
+    'curriculum'
+  );
   assert.equal(
     streamEvents[0].subject,
     'Mathematics'
@@ -239,4 +278,22 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
     stored.messages.map((message) => message.role),
     ['student', 'tutor', 'student', 'tutor']
   );
+
+  const searchResponse = await fetch(
+    `http://127.0.0.1:${gatewayPort}/api/documents/search`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: 'subtraction quantity',
+      }),
+    }
+  );
+  const search = await searchResponse.json();
+
+  assert.equal(searchResponse.status, 200);
+  assert.equal(search.results[0].page, 21);
+  assert.equal('content' in search.results[0], false);
 });

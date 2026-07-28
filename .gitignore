@@ -42,9 +42,14 @@ example
 /ios
 /android
 
-# local backend secrets and private learner data
+# local backend secrets, private learner data, and curriculum files
 server/.env
 server/data/*.db
 server/data/*.db-*
 server/data/*.sqlite
 server/data/*.sqlite-*
+server/data/ocr-cache/
+server/data/curriculum-catalog.json
+server/data/curriculum-sync.json
+server/data/curriculum-sync.json.tmp
+server/books/

@@ -25,6 +25,20 @@ function liveRequest(overrides = {}) {
         supportLevel: 2,
       },
     },
+    curriculumEvidence: [
+      {
+        citationId: 'source-1',
+        documentTitle: 'Primary Mathematics',
+        curriculum: 'NCTB',
+        academicYear: '2026',
+        grade: 'Class 3',
+        subject: 'Mathematics',
+        language: 'English',
+        version: 'English Version',
+        page: 21,
+        content: 'Subtraction means taking away.',
+      },
+    ],
     ...overrides,
   };
 }
@@ -75,4 +89,16 @@ test('tutor prompt receives subject plan and relevant memory', () => {
   assert.match(prompt, /Mathematics/);
   assert.match(prompt, /Fractions/);
   assert.match(prompt, /require evidence/i);
+});
+
+test('tutor prompt grounds answers without inventing citations', () => {
+  const prompt = buildStreamingTutorSystemPrompt(
+    liveRequest()
+  );
+
+  assert.match(prompt, /CURRICULUM_EVIDENCE_DATA=/);
+  assert.match(prompt, /Primary Mathematics/);
+  assert.match(prompt, /"page":21/);
+  assert.match(prompt, /Never invent a book title/i);
+  assert.match(prompt, /Do not speak citation IDs/i);
 });
