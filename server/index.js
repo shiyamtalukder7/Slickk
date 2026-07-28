@@ -24,6 +24,7 @@ function shutdown(signal) {
   server.close(() => {
     app.locals.conversationStore?.close();
     app.locals.curriculumStore?.close();
+    app.locals.schoolStore?.close();
     process.exit(0);
   });
 

@@ -152,6 +152,7 @@ function createConversationStore(
       student_name TEXT NOT NULL,
       grade TEXT NOT NULL,
       language TEXT NOT NULL,
+      education_profile_json TEXT NOT NULL DEFAULT '{}',
       total_turns INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -234,6 +235,22 @@ function createConversationStore(
       ON learning_events(student_id, created_at DESC);
   `);
 
+  const learnerProfileColumns = database
+    .prepare('PRAGMA table_info(learner_profiles)')
+    .all()
+    .map((column) => column.name);
+
+  if (
+    !learnerProfileColumns.includes(
+      'education_profile_json'
+    )
+  ) {
+    database.exec(`
+      ALTER TABLE learner_profiles
+      ADD COLUMN education_profile_json TEXT NOT NULL DEFAULT '{}';
+    `);
+  }
+
   const statements = {
     findConversation: database.prepare(`
       SELECT id, student_id, title, created_at, updated_at
@@ -306,6 +323,7 @@ function createConversationStore(
         student_name,
         grade,
         language,
+        education_profile_json,
         total_turns,
         created_at,
         updated_at
@@ -327,6 +345,25 @@ function createConversationStore(
         grade = excluded.grade,
         language = excluded.language,
         total_turns = learner_profiles.total_turns + 1,
+        updated_at = excluded.updated_at
+    `),
+    saveEducationProfile: database.prepare(`
+      INSERT INTO learner_profiles (
+        student_id,
+        student_name,
+        grade,
+        language,
+        education_profile_json,
+        total_turns,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+      ON CONFLICT(student_id) DO UPDATE SET
+        student_name = excluded.student_name,
+        grade = excluded.grade,
+        language = excluded.language,
+        education_profile_json =
+          excluded.education_profile_json,
         updated_at = excluded.updated_at
     `),
     findSubjectProgress: database.prepare(`
@@ -634,12 +671,35 @@ function createConversationStore(
       studentName: row?.student_name || 'Student',
       grade: row?.grade || 'General',
       language: row?.language || 'English',
+      educationProfile: safeJsonParse(
+        row?.education_profile_json
+      ),
       totalTurns: row?.total_turns || 0,
       createdAt: row?.created_at || null,
       updatedAt: row?.updated_at || null,
       subjects,
       activeMisconceptions,
     };
+  }
+
+  function saveEducationProfile({
+    studentId,
+    profile,
+    language,
+  }) {
+    const now = new Date().toISOString();
+
+    statements.saveEducationProfile.run(
+      studentId,
+      profile.studentName,
+      profile.grade,
+      language,
+      JSON.stringify(profile),
+      now,
+      now
+    );
+
+    return getLearnerProfile(studentId);
   }
 
   function recordLearningTurn({
@@ -820,6 +880,7 @@ function createConversationStore(
     recordAssessmentEvidence,
     recordLearningTurn,
     requireConversation,
+    saveEducationProfile,
     saveMessage,
   };
 }

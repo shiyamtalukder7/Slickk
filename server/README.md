@@ -30,10 +30,37 @@ npm test
 npm run check
 ```
 
+## Curriculum PDF access
+
+Official public, public-domain, and open-license PDFs are available to every
+matching student profile. A commercial textbook must use
+`licensed-user-copy` and be assigned to a school or student.
+
+Import a free official specification:
+
+```powershell
+npm run import:pdf -- --file "C:\path\specification.pdf" --title "Official Mathematics Specification" --academic-year "2026" --grade "Class 9-10" --subject "Mathematics" --language "English" --curriculum "Cambridge International" --version "Cambridge IGCSE" --rights "official-public" --source-url "https://official-provider.example/specification"
+```
+
+Import a school-licensed textbook:
+
+```powershell
+npm run import:pdf -- --file "C:\path\licensed-book.pdf" --title "Licensed Mathematics Textbook" --academic-year "2026" --grade "Class 7" --subject "Mathematics" --language "English" --curriculum "Cambridge International" --version "Cambridge Lower Secondary" --rights "licensed-user-copy" --school-id "the-profile-school-id"
+```
+
+Use `--student-id "local-student"` instead when the family owns the licensed
+copy. Licensed document text is excluded from every other profile's search.
+
 ## Endpoints
 
 - `GET /` returns service metadata.
 - `GET /health` verifies Ollama, the selected model, and local storage.
+- `GET /api/profile-options` lists curricula, classes, languages, and subjects.
+- `GET /api/curricula/english-medium` lists official international pathways.
+- `GET /api/schools/search?q=...` searches the verified school directory.
+- `GET|PUT /api/students/:id/profile` loads or saves a curriculum profile.
+- `GET /api/documents?studentId=...` lists public and entitled resources.
+- `POST /api/documents/search` performs access-controlled curriculum search.
 - `POST /api/tutor` returns the original structured mobile response.
 - `POST /api/tutor/stream` returns newline-delimited streaming events:
   `start`, `token`, `complete`, or `error`.

@@ -49,6 +49,8 @@ function usage() {
     '  --curriculum <name>       Default: NCTB',
     '  --version <name>          Example: English Version',
     '  --source-url <official URL>',
+    '  --school-id <profile school ID>  Required for a school-licensed copy',
+    '  --student-id <student ID>         Required for a family/student-licensed copy',
     '  --ocr-language <codes>   Example: eng+ben',
     '  --replace                Replace an earlier import of the same PDF',
     '  --no-ocr                 Do not OCR image-only pages',
@@ -87,6 +89,16 @@ async function main() {
     'rights',
   ]);
 
+  if (
+    args.rights === 'licensed-user-copy' &&
+    !String(args['school-id'] || '').trim() &&
+    !String(args['student-id'] || '').trim()
+  ) {
+    throw new Error(
+      'A licensed user copy requires --school-id or --student-id.'
+    );
+  }
+
   const filePath = path.resolve(args.file);
   const result = await importPdfFile({
     filePath,
@@ -103,6 +115,10 @@ async function main() {
       version: args.version || 'Unspecified',
       sourceUrl: args['source-url'] || '',
       rights: args.rights,
+      access: {
+        schoolId: args['school-id'] || '',
+        studentId: args['student-id'] || '',
+      },
     },
     onProgress(progress) {
       if (progress.phase === 'ocr-required') {
@@ -145,6 +161,8 @@ async function main() {
           pageCount: result.pageCount,
           ocrPageCount: result.ocrPageCount,
         },
+        entitlements:
+          result.entitlements || undefined,
       },
       null,
       2

@@ -1,35 +1,206 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
 import {
-    Pressable,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
-const LANGUAGES = ['English', 'বাংলা', 'Banglish'];
-const GRADES = [
-  'Grade 1–3',
-  'Grade 4–6',
-  'Grade 7–8',
-  'Grade 9–10',
-  'Grade 11–12',
-  'University',
+import {
+  loadProfileOptions,
+  ProfileOptions,
+  saveStudentProfile,
+  School,
+  searchSchools,
+} from '@/services/student-profile';
+
+const DEFAULT_SUBJECTS = [
+  'Mathematics',
+  'English',
+  'Bangla',
+  'Science',
 ];
 
 export default function OnboardingScreen() {
+  const [step, setStep] = useState(1);
+  const [options, setOptions] =
+    useState<ProfileOptions | null>(null);
   const [name, setName] = useState('');
-  const [language, setLanguage] = useState('English');
-  const [grade, setGrade] = useState('Grade 7–8');
+  const [language, setLanguage] =
+    useState('english');
+  const [curriculumTrack, setCurriculumTrack] =
+    useState('nctb-english-version');
+  const [grade, setGrade] = useState('Class 7');
+  const [schoolQuery, setSchoolQuery] = useState('');
+  const [schoolResults, setSchoolResults] = useState<
+    School[]
+  >([]);
+  const [selectedSchool, setSelectedSchool] =
+    useState<School | null>(null);
+  const [subjects, setSubjects] =
+    useState<string[]>(DEFAULT_SUBJECTS);
+  const [isSearching, setIsSearching] =
+    useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  const continueSetup = () => {
-    router.push('/explore');
+  useEffect(() => {
+    let active = true;
+
+    loadProfileOptions().then((loaded) => {
+      if (active) {
+        setOptions(loaded);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      step !== 3 ||
+      schoolQuery.trim().length < 2 ||
+      selectedSchool?.name === schoolQuery.trim()
+    ) {
+      setSchoolResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+
+      try {
+        const results = await searchSchools(
+          schoolQuery,
+          controller.signal
+        );
+        setSchoolResults(results);
+      } catch {
+        if (!controller.signal.aborted) {
+          setSchoolResults([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearching(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [schoolQuery, selectedSchool?.name, step]);
+
+  const currentTrack = useMemo(
+    () =>
+      options?.curriculumTracks.find(
+        (track) => track.id === curriculumTrack
+      ),
+    [curriculumTrack, options]
+  );
+
+  const canContinue =
+    step === 1
+      ? name.trim().length >= 2
+      : step === 2
+        ? Boolean(curriculumTrack && grade)
+        : schoolQuery.trim().length >= 2 &&
+          subjects.length > 0;
+
+  const goBack = () => {
+    setError('');
+
+    if (step === 1) {
+      router.back();
+      return;
+    }
+
+    setStep((value) => value - 1);
   };
+
+  const continueSetup = async () => {
+    setError('');
+
+    if (step < 3) {
+      setStep((value) => value + 1);
+      return;
+    }
+
+    const school: School =
+      selectedSchool?.name === schoolQuery.trim()
+        ? selectedSchool
+        : {
+            id: `custom-${Date.now()}`,
+            name: schoolQuery.trim(),
+            eiin: '',
+            district: '',
+            upazila: '',
+            custom: true,
+          };
+
+    setIsSaving(true);
+
+    try {
+      await saveStudentProfile({
+        studentName: name.trim(),
+        teachingLanguage: language,
+        curriculumTrack,
+        grade,
+        school,
+        subjects,
+        setupComplete: true,
+      });
+      router.replace('/explore');
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : 'Slickk could not save this profile.'
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const toggleSubject = (subject: string) => {
+    setSubjects((current) =>
+      current.includes(subject)
+        ? current.filter((item) => item !== subject)
+        : [...current, subject]
+    );
+  };
+
+  if (!options) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loading}>
+          <ActivityIndicator
+            size="large"
+            color="#70F7D4"
+          />
+          <Text style={styles.loadingText}>
+            Preparing your learning profile…
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -40,143 +211,422 @@ export default function OnboardingScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+        <Pressable
+          onPress={goBack}
+          style={styles.backButton}
+        >
+          <Ionicons
+            name="arrow-back"
+            size={22}
+            color="#FFFFFF"
+          />
         </Pressable>
 
         <View style={styles.progressTrack}>
-          <View style={styles.progressFill} />
+          <View
+            style={[
+              styles.progressFill,
+              { width: `${step * 33.333}%` },
+            ]}
+          />
         </View>
 
-        <Text style={styles.step}>STEP 1 OF 3</Text>
-
-        <Text style={styles.title}>
-          Let Slickk learn about{' '}
-          <Text style={styles.highlight}>you.</Text>
+        <Text style={styles.step}>
+          STEP {step} OF 3
         </Text>
 
-        <Text style={styles.subtitle}>
-          Your tutor will adapt its explanations, questions and lesson speed to
-          your profile.
-        </Text>
+        {step === 1 && (
+          <>
+            <Text style={styles.title}>
+              Let Slickk learn about{' '}
+              <Text style={styles.highlight}>you.</Text>
+            </Text>
+            <Text style={styles.subtitle}>
+              Your LLM tutor will remember your level,
+              language, school curriculum and learning
+              progress.
+            </Text>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>WHAT SHOULD YOUR TUTOR CALL YOU?</Text>
+            <View style={styles.section}>
+              <Text style={styles.label}>
+                WHAT SHOULD YOUR TUTOR CALL YOU?
+              </Text>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="person-outline"
+                  size={21}
+                  color="#70F7D4"
+                />
+                <TextInput
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Enter your name"
+                  placeholderTextColor="#66738A"
+                  style={styles.input}
+                  autoCapitalize="words"
+                />
+              </View>
+            </View>
 
-          <View style={styles.inputContainer}>
-            <Ionicons name="person-outline" size={21} color="#70F7D4" />
+            <View style={styles.section}>
+              <Text style={styles.label}>
+                PREFERRED TEACHING LANGUAGE
+              </Text>
+              <View style={styles.optionGrid}>
+                {options.teachingLanguages.map((item) => {
+                  const selected = language === item.id;
 
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="Enter your name"
-              placeholderTextColor="#66738A"
-              style={styles.input}
-              autoCapitalize="words"
-            />
-          </View>
-        </View>
+                  return (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => setLanguage(item.id)}
+                      style={[
+                        styles.fullOption,
+                        selected && styles.optionSelected,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.optionText,
+                          selected &&
+                            styles.optionTextSelected,
+                        ]}
+                      >
+                        {item.name}
+                      </Text>
+                      {selected && (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={19}
+                          color="#081426"
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </>
+        )}
 
-        <View style={styles.section}>
-          <Text style={styles.label}>PREFERRED TEACHING LANGUAGE</Text>
+        {step === 2 && (
+          <>
+            <Text style={styles.title}>
+              Choose your{' '}
+              <Text style={styles.highlight}>
+                curriculum.
+              </Text>
+            </Text>
+            <Text style={styles.subtitle}>
+              Slickk will keep the LLM tutor, then constrain
+              its lessons and book retrieval to this exact
+              track and class.
+            </Text>
 
-          <View style={styles.optionGrid}>
-            {LANGUAGES.map((item) => {
-              const selected = language === item;
+            <View style={styles.section}>
+              <Text style={styles.label}>
+                SCHOOL CURRICULUM
+              </Text>
+              <View style={styles.optionGrid}>
+                {options.curriculumTracks.map((track) => {
+                  const selected =
+                    curriculumTrack === track.id;
 
-              return (
-                <Pressable
-                  key={item}
-                  onPress={() => setLanguage(item)}
-                  style={[
-                    styles.languageOption,
-                    selected && styles.optionSelected,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.optionText,
-                      selected && styles.optionTextSelected,
-                    ]}
-                  >
-                    {item}
+                  return (
+                    <Pressable
+                      key={track.id}
+                      onPress={() =>
+                        setCurriculumTrack(track.id)
+                      }
+                      style={[
+                        styles.trackOption,
+                        selected && styles.trackSelected,
+                      ]}
+                    >
+                      <View style={styles.trackCopy}>
+                        <Text
+                          style={[
+                            styles.trackTitle,
+                            selected &&
+                              styles.trackTitleSelected,
+                          ]}
+                        >
+                          {track.name}
+                        </Text>
+                        <Text style={styles.trackAccess}>
+                          {track.resourceAccess ===
+                          'official-public'
+                            ? 'Official public textbooks'
+                            : 'Official syllabus + licensed books'}
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name={
+                          selected
+                            ? 'radio-button-on'
+                            : 'radio-button-off'
+                        }
+                        size={21}
+                        color={
+                          selected ? '#70F7D4' : '#526278'
+                        }
+                      />
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.label}>
+                CURRENT CLASS
+              </Text>
+              <View style={styles.chipGrid}>
+                {options.grades.map((item) => {
+                  const selected = grade === item.name;
+
+                  return (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => setGrade(item.name)}
+                      style={[
+                        styles.chip,
+                        selected && styles.chipSelected,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          selected &&
+                            styles.chipTextSelected,
+                        ]}
+                      >
+                        {item.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            {currentTrack?.resourceAccess !==
+              'official-public' && (
+              <View style={styles.noticeCard}>
+                <Ionicons
+                  name="shield-checkmark-outline"
+                  size={22}
+                  color="#F5C76B"
+                />
+                <Text style={styles.noticeText}>
+                  Commercial English-medium textbooks are
+                  added only from a school or family’s
+                  licensed copy. Slickk can still follow the
+                  official public syllabus.
+                </Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <Text style={styles.title}>
+              Connect your{' '}
+              <Text style={styles.highlight}>school.</Text>
+            </Text>
+            <Text style={styles.subtitle}>
+              Search the verified directory, or enter any
+              newer, English-medium or non-EIIN school
+              yourself.
+            </Text>
+
+            <View style={styles.section}>
+              <Text style={styles.label}>SCHOOL NAME</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="school-outline"
+                  size={21}
+                  color="#70F7D4"
+                />
+                <TextInput
+                  value={schoolQuery}
+                  onChangeText={(value) => {
+                    setSchoolQuery(value);
+                    setSelectedSchool(null);
+                  }}
+                  placeholder="Type school name or EIIN"
+                  placeholderTextColor="#66738A"
+                  style={styles.input}
+                  autoCapitalize="words"
+                />
+                {isSearching && (
+                  <ActivityIndicator
+                    size="small"
+                    color="#70F7D4"
+                  />
+                )}
+              </View>
+
+              {schoolResults.length > 0 && (
+                <View style={styles.schoolResults}>
+                  {schoolResults.map((school) => (
+                    <Pressable
+                      key={school.id || school.eiin}
+                      onPress={() => {
+                        setSelectedSchool(school);
+                        setSchoolQuery(school.name);
+                        setSchoolResults([]);
+                      }}
+                      style={styles.schoolResult}
+                    >
+                      <View style={styles.schoolCopy}>
+                        <Text style={styles.schoolName}>
+                          {school.name}
+                        </Text>
+                        <Text style={styles.schoolMeta}>
+                          {[
+                            school.eiin
+                              ? `EIIN ${school.eiin}`
+                              : '',
+                            school.upazila,
+                            school.district,
+                          ]
+                            .filter(Boolean)
+                            .join(' • ')}
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={21}
+                        color="#70F7D4"
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+
+              {schoolQuery.trim().length >= 2 &&
+                !selectedSchool &&
+                !isSearching && (
+                  <Text style={styles.manualHint}>
+                    If your school is not shown, Slickk will
+                    save “{schoolQuery.trim()}” as a custom
+                    school.
                   </Text>
+                )}
+            </View>
 
-                  {selected && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={19}
-                      color="#081426"
-                    />
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
+            <View style={styles.section}>
+              <Text style={styles.label}>
+                SUBJECTS YOU STUDY
+              </Text>
+              <View style={styles.subjectList}>
+                {options.subjects.map((subject) => {
+                  const selected = subjects.includes(subject);
 
-        <View style={styles.section}>
-          <Text style={styles.label}>CURRENT LEARNING LEVEL</Text>
-
-          <View style={styles.gradeGrid}>
-            {GRADES.map((item) => {
-              const selected = grade === item;
-
-              return (
-                <Pressable
-                  key={item}
-                  onPress={() => setGrade(item)}
-                  style={[
-                    styles.gradeOption,
-                    selected && styles.gradeSelected,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.gradeText,
-                      selected && styles.gradeTextSelected,
-                    ]}
-                  >
-                    {item}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
+                  return (
+                    <Pressable
+                      key={subject}
+                      onPress={() => toggleSubject(subject)}
+                      style={[
+                        styles.subjectOption,
+                        selected &&
+                          styles.subjectSelected,
+                      ]}
+                    >
+                      <Ionicons
+                        name={
+                          selected
+                            ? 'checkmark-circle'
+                            : 'ellipse-outline'
+                        }
+                        size={20}
+                        color={
+                          selected ? '#70F7D4' : '#53647A'
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.subjectText,
+                          selected &&
+                            styles.subjectTextSelected,
+                        ]}
+                      >
+                        {subject}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </>
+        )}
 
         <View style={styles.intelligenceCard}>
           <View style={styles.intelligenceIcon}>
-            <Ionicons name="sparkles" size={23} color="#70F7D4" />
+            <Ionicons
+              name="sparkles"
+              size={23}
+              color="#70F7D4"
+            />
           </View>
-
           <View style={styles.intelligenceText}>
             <Text style={styles.intelligenceTitle}>
               Your Learning Twin begins here
             </Text>
-
             <Text style={styles.intelligenceDescription}>
-              Slickk will gradually understand your strengths, misconceptions,
-              pace and preferred explanation style.
+              The LLM remains your tutor. This profile tells
+              it which curriculum, class, books, language and
+              teaching level belong to you.
             </Text>
           </View>
         </View>
 
+        {error ? (
+          <View style={styles.errorCard}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={20}
+              color="#FF8B8B"
+            />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
+
         <Pressable
-          disabled={name.trim().length < 2}
+          disabled={!canContinue || isSaving}
           onPress={continueSetup}
           style={({ pressed }) => [
             styles.continueButton,
-            name.trim().length < 2 && styles.continueButtonDisabled,
+            (!canContinue || isSaving) &&
+              styles.continueButtonDisabled,
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={styles.continueButtonText}>Continue setup</Text>
-          <Ionicons name="arrow-forward" size={21} color="#081426" />
+          <Text style={styles.continueButtonText}>
+            {step === 3
+              ? isSaving
+                ? 'Saving profile…'
+                : 'Start personalized learning'
+              : 'Continue setup'}
+          </Text>
+          {isSaving ? (
+            <ActivityIndicator
+              size="small"
+              color="#081426"
+            />
+          ) : (
+            <Ionicons
+              name="arrow-forward"
+              size={21}
+              color="#081426"
+            />
+          )}
         </Pressable>
 
         <Text style={styles.privacyText}>
-          Your profile stays private and can be changed later.
+          Your local profile stays private and can be changed
+          later.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -194,6 +644,16 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 36,
     backgroundColor: '#07101E',
+  },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+  },
+  loadingText: {
+    color: '#91A0B6',
+    fontSize: 14,
   },
   backButton: {
     width: 45,
@@ -213,7 +673,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   progressFill: {
-    width: '33%',
     height: '100%',
     borderRadius: 10,
     backgroundColor: '#70F7D4',
@@ -227,10 +686,10 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#FFFFFF',
-    fontSize: 38,
-    lineHeight: 44,
+    fontSize: 37,
+    lineHeight: 43,
     fontWeight: '900',
-    letterSpacing: -1.3,
+    letterSpacing: -1.2,
     marginTop: 12,
   },
   highlight: {
@@ -243,7 +702,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   section: {
-    marginTop: 32,
+    marginTop: 30,
   },
   label: {
     color: '#718096',
@@ -253,7 +712,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   inputContainer: {
-    height: 58,
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -271,7 +730,7 @@ const styles = StyleSheet.create({
   optionGrid: {
     gap: 10,
   },
-  languageOption: {
+  fullOption: {
     minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
@@ -295,37 +754,151 @@ const styles = StyleSheet.create({
     color: '#081426',
     fontWeight: '900',
   },
-  gradeGrid: {
+  trackOption: {
+    minHeight: 76,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  gradeOption: {
-    paddingHorizontal: 15,
-    paddingVertical: 13,
-    borderRadius: 15,
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#203047',
     backgroundColor: '#0C1828',
   },
-  gradeSelected: {
+  trackSelected: {
+    borderColor: '#70F7D4',
+    backgroundColor: '#0D292D',
+  },
+  trackCopy: {
+    flex: 1,
+  },
+  trackTitle: {
+    color: '#DCE4EF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  trackTitleSelected: {
+    color: '#70F7D4',
+  },
+  trackAccess: {
+    color: '#718096',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 5,
+  },
+  chipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 9,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#203047',
+    backgroundColor: '#0C1828',
+  },
+  chipSelected: {
     borderColor: '#70F7D4',
     backgroundColor: '#12312F',
   },
-  gradeText: {
+  chipText: {
     color: '#A2AEC0',
     fontSize: 13,
     fontWeight: '700',
   },
-  gradeTextSelected: {
+  chipTextSelected: {
     color: '#70F7D4',
+  },
+  noticeCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginTop: 22,
+    padding: 16,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: '#493D24',
+    backgroundColor: '#211D15',
+  },
+  noticeText: {
+    flex: 1,
+    color: '#CFC3A7',
+    fontSize: 12,
+    lineHeight: 19,
+  },
+  schoolResults: {
+    marginTop: 10,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#203047',
+    backgroundColor: '#0C1828',
+    overflow: 'hidden',
+  },
+  schoolResult: {
+    minHeight: 66,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#203047',
+  },
+  schoolCopy: {
+    flex: 1,
+  },
+  schoolName: {
+    color: '#E7EDF5',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  schoolMeta: {
+    color: '#738198',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  manualHint: {
+    color: '#7F8DA1',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 10,
+  },
+  subjectList: {
+    gap: 9,
+  },
+  subjectOption: {
+    minHeight: 49,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    paddingHorizontal: 15,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#1C2A3F',
+    backgroundColor: '#0B1626',
+  },
+  subjectSelected: {
+    borderColor: '#28534F',
+    backgroundColor: '#0C2429',
+  },
+  subjectText: {
+    flex: 1,
+    color: '#8F9AAF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  subjectTextSelected: {
+    color: '#CFF9EE',
   },
   intelligenceCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 14,
     padding: 18,
-    marginTop: 32,
+    marginTop: 30,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#1D3941',
@@ -353,13 +926,31 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: 5,
   },
+  errorCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 14,
+    marginTop: 18,
+    borderRadius: 15,
+    backgroundColor: '#2A171C',
+    borderWidth: 1,
+    borderColor: '#5D2934',
+  },
+  errorText: {
+    flex: 1,
+    color: '#FFB0B0',
+    fontSize: 12,
+    lineHeight: 18,
+  },
   continueButton: {
-    height: 58,
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
     paddingHorizontal: 21,
-    marginTop: 28,
+    marginTop: 26,
     borderRadius: 18,
     backgroundColor: '#70F7D4',
   },
@@ -367,8 +958,9 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   continueButtonText: {
+    flex: 1,
     color: '#081426',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
   },
   buttonPressed: {

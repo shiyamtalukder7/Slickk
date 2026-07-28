@@ -85,6 +85,51 @@ function limitedText(value, fallback, maximum) {
   return (text || fallback).slice(0, maximum);
 }
 
+function entitlementRows(
+  access,
+  rights = 'licensed-user-copy'
+) {
+  if (rights !== 'licensed-user-copy') {
+    return [];
+  }
+
+  const rows = [];
+  const studentId = limitedText(
+    access?.studentId,
+    '',
+    120
+  );
+  const schoolId = limitedText(
+    access?.schoolId,
+    '',
+    180
+  );
+
+  if (studentId) {
+    rows.push({
+      principalType: 'student',
+      principalId: studentId,
+    });
+  }
+
+  if (schoolId) {
+    rows.push({
+      principalType: 'school',
+      principalId: schoolId,
+    });
+  }
+
+  if (rows.length === 0) {
+    throw new CurriculumStoreError(
+      'A licensed textbook must be assigned to a student or school.',
+      'DOCUMENT_ENTITLEMENT_REQUIRED',
+      400
+    );
+  }
+
+  return rows;
+}
+
 function chunkPageText(
   text,
   maximumLength = 1400,
@@ -161,6 +206,31 @@ function buildFtsQuery(query) {
   return usefulTerms
     .map((term) => `"${term.replace(/"/g, '""')}"`)
     .join(' OR ');
+}
+
+function gradeBandPlacement(grade) {
+  const match = String(grade || '').match(
+    /\b(\d{1,2})\b/
+  );
+  const number = match ? Number(match[1]) : null;
+
+  if (!number || number < 1 || number > 12) {
+    return '';
+  }
+
+  if (number <= 5) {
+    return 'Class 1-5';
+  }
+
+  if (number <= 8) {
+    return 'Class 6-8';
+  }
+
+  if (number <= 10) {
+    return 'Class 9-10';
+  }
+
+  return 'Class 11-12';
 }
 
 function mapDocument(row) {
@@ -247,6 +317,22 @@ function createCurriculumStore(
       UNIQUE (document_id, page_number, chunk_index)
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS curriculum_document_entitlements (
+      document_id TEXT NOT NULL,
+      principal_type TEXT NOT NULL
+        CHECK (principal_type IN ('student', 'school')),
+      principal_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (
+        document_id,
+        principal_type,
+        principal_id
+      ),
+      FOREIGN KEY (document_id)
+        REFERENCES curriculum_documents(id)
+        ON DELETE CASCADE
+    ) STRICT;
+
     CREATE VIRTUAL TABLE IF NOT EXISTS curriculum_chunks_fts
     USING fts5(
       chunk_id UNINDEXED,
@@ -273,6 +359,13 @@ function createCurriculumStore(
 
     CREATE INDEX IF NOT EXISTS curriculum_chunks_document
       ON curriculum_chunks(document_id, page_number, chunk_index);
+
+    CREATE INDEX IF NOT EXISTS curriculum_entitlements_principal
+      ON curriculum_document_entitlements(
+        principal_type,
+        principal_id,
+        document_id
+      );
   `);
 
   const statements = {
@@ -342,11 +435,46 @@ function createCurriculumStore(
         content
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `),
+    insertEntitlement: database.prepare(`
+      INSERT OR IGNORE INTO curriculum_document_entitlements (
+        document_id,
+        principal_type,
+        principal_id,
+        created_at
+      ) VALUES (?, ?, ?, ?)
+    `),
+    documentEntitlements: database.prepare(`
+      SELECT
+        principal_type,
+        principal_id,
+        created_at
+      FROM curriculum_document_entitlements
+      WHERE document_id = ?
+      ORDER BY principal_type, principal_id
+    `),
     listDocuments: database.prepare(`
-      SELECT *
-      FROM curriculum_documents
-      WHERE status = 'ready'
-      ORDER BY updated_at DESC
+      SELECT d.*
+      FROM curriculum_documents AS d
+      WHERE d.status = 'ready'
+        AND (
+          d.rights <> 'licensed-user-copy' OR
+          EXISTS (
+            SELECT 1
+            FROM curriculum_document_entitlements AS e
+            WHERE e.document_id = d.id
+              AND (
+                (
+                  e.principal_type = 'student' AND
+                  e.principal_id = ?
+                ) OR
+                (
+                  e.principal_type = 'school' AND
+                  e.principal_id = ?
+                )
+              )
+          )
+        )
+      ORDER BY d.updated_at DESC
       LIMIT ?
     `),
     search: database.prepare(`
@@ -363,6 +491,7 @@ function createCurriculumStore(
         d.academic_year,
         d.version,
         d.source_url,
+        d.rights,
         bm25(
           curriculum_chunks_fts,
           0.0,
@@ -380,6 +509,33 @@ function createCurriculumStore(
         ON d.id = f.document_id
       WHERE curriculum_chunks_fts MATCH ?
         AND d.status = 'ready'
+        AND (? = '' OR d.curriculum = ?)
+        AND (? = '' OR d.version = ?)
+        AND (
+          ? = '' OR
+          d.grade = ? OR
+          d.grade = ?
+        )
+        AND (? = '' OR d.subject = ?)
+        AND (? = '' OR d.language = ?)
+        AND (
+          d.rights <> 'licensed-user-copy' OR
+          EXISTS (
+            SELECT 1
+            FROM curriculum_document_entitlements AS e
+            WHERE e.document_id = d.id
+              AND (
+                (
+                  e.principal_type = 'student' AND
+                  e.principal_id = ?
+                ) OR
+                (
+                  e.principal_type = 'school' AND
+                  e.principal_id = ?
+                )
+              )
+          )
+        )
       ORDER BY rank
       LIMIT ?
     `),
@@ -392,15 +548,32 @@ function createCurriculumStore(
     sha256,
     replace = false,
   }) {
+    const rights = limitedText(
+      metadata?.rights,
+      '',
+      80
+    );
+    const entitlements = entitlementRows(
+      metadata?.access,
+      rights
+    );
     const existing = mapDocument(
       statements.documentByHash.get(sha256)
     );
 
     if (existing && !replace) {
+      const existingEntitlements =
+        grantDocumentEntitlements(
+        existing.id,
+        metadata?.access,
+        existing.rights
+      );
+
       return {
         document: existing,
         duplicate: true,
         replaced: false,
+        entitlements: existingEntitlements,
       };
     }
 
@@ -557,6 +730,15 @@ function createCurriculumStore(
         );
       }
 
+      for (const entitlement of entitlements) {
+        statements.insertEntitlement.run(
+          documentId,
+          entitlement.principalType,
+          entitlement.principalId,
+          now
+        );
+      }
+
       database.exec('COMMIT');
     } catch (error) {
       database.exec('ROLLBACK');
@@ -569,12 +751,21 @@ function createCurriculumStore(
       ),
       duplicate: false,
       replaced: Boolean(existing),
+      entitlements:
+        getDocumentEntitlements(documentId),
     };
   }
 
-  function listDocuments(limit = 100) {
+  function listDocuments(
+    limit = 100,
+    access = {}
+  ) {
     return statements.listDocuments
-      .all(Math.min(500, Math.max(1, limit)))
+      .all(
+        limitedText(access.studentId, '', 120),
+        limitedText(access.schoolId, '', 180),
+        Math.min(500, Math.max(1, limit))
+      )
       .map(mapDocument);
   }
 
@@ -586,16 +777,102 @@ function createCurriculumStore(
     );
   }
 
-  function search(query, limit = 5) {
+  function grantDocumentEntitlements(
+    documentId,
+    access,
+    rights = 'licensed-user-copy'
+  ) {
+    const rows = entitlementRows(access, rights);
+    const now = new Date().toISOString();
+
+    for (const row of rows) {
+      statements.insertEntitlement.run(
+        documentId,
+        row.principalType,
+        row.principalId,
+        now
+      );
+    }
+
+    return statements.documentEntitlements
+      .all(documentId)
+      .map((row) => ({
+        principalType: row.principal_type,
+        principalId: row.principal_id,
+        createdAt: row.created_at,
+      }));
+  }
+
+  function getDocumentEntitlements(documentId) {
+    return statements.documentEntitlements
+      .all(documentId)
+      .map((row) => ({
+        principalType: row.principal_type,
+        principalId: row.principal_id,
+        createdAt: row.created_at,
+      }));
+  }
+
+  function search(query, limit = 5, filters = {}) {
     const ftsQuery = buildFtsQuery(query);
 
     if (!ftsQuery) {
       return [];
     }
 
+    const curriculum = limitedText(
+      filters.curriculum,
+      '',
+      120
+    );
+    const version = limitedText(
+      filters.version,
+      '',
+      80
+    );
+    const grade = limitedText(
+      filters.grade,
+      '',
+      80
+    );
+    const gradeBand = gradeBandPlacement(grade);
+    const subject = limitedText(
+      filters.subject,
+      '',
+      120
+    );
+    const language = limitedText(
+      filters.language,
+      '',
+      50
+    );
+    const studentId = limitedText(
+      filters.studentId,
+      '',
+      120
+    );
+    const schoolId = limitedText(
+      filters.schoolId,
+      '',
+      180
+    );
+
     return statements.search
       .all(
         ftsQuery,
+        curriculum,
+        curriculum,
+        version,
+        version,
+        grade,
+        grade,
+        gradeBand,
+        subject,
+        subject,
+        language,
+        language,
+        studentId,
+        schoolId,
         Math.min(10, Math.max(1, limit))
       )
       .map((row, index) => ({
@@ -611,6 +888,7 @@ function createCurriculumStore(
         version: row.version,
         page: row.page_number,
         sourceUrl: row.source_url,
+        rights: row.rights,
         excerpt: row.content.slice(0, 700),
         content: row.content,
         relevance: Number(
@@ -628,6 +906,8 @@ function createCurriculumStore(
   return {
     close,
     findDocumentByHash,
+    getDocumentEntitlements,
+    grantDocumentEntitlements,
     importDocument,
     listDocuments,
     search,
@@ -640,4 +920,6 @@ module.exports = {
   chunkPageText,
   cleanText,
   createCurriculumStore,
+  entitlementRows,
+  gradeBandPlacement,
 };

@@ -10,6 +10,13 @@ function liveRequest(overrides = {}) {
     studentName: 'Student',
     grade: 'Grade 7-8',
     language: 'English',
+    schoolName: 'Example School',
+    schoolEiin: '123456',
+    curriculumTrack: 'NCTB English Version',
+    curriculumTrackId: 'nctb-english-version',
+    enrolledSubjects: ['Mathematics', 'English'],
+    qualificationStage: '',
+    qualificationProvider: '',
     subject: 'Auto',
     channel: 'live',
     mode: 'adaptive',
@@ -101,4 +108,41 @@ test('tutor prompt grounds answers without inventing citations', () => {
   assert.match(prompt, /"page":21/);
   assert.match(prompt, /Never invent a book title/i);
   assert.match(prompt, /Do not speak citation IDs/i);
+});
+
+test('tutor prompt binds the LLM to the saved school curriculum profile', () => {
+  const prompt = buildStreamingTutorSystemPrompt(
+    liveRequest()
+  );
+
+  assert.match(prompt, /Example School/);
+  assert.match(prompt, /NCTB English Version/);
+  assert.match(
+    prompt,
+    /Do not silently switch to another curriculum or class/i
+  );
+  assert.match(
+    prompt,
+    /never infer the school curriculum from its name/i
+  );
+});
+
+test('international tutor prompt follows the selected qualification stage', () => {
+  const prompt = buildStreamingTutorSystemPrompt(
+    liveRequest({
+      curriculumTrack: 'Cambridge International',
+      curriculumTrackId:
+        'cambridge-international',
+      qualificationStage:
+        'Cambridge Lower Secondary',
+      qualificationProvider:
+        'Cambridge International Education',
+    })
+  );
+
+  assert.match(prompt, /Cambridge Lower Secondary/);
+  assert.match(
+    prompt,
+    /follow the selected qualification stage and provider/i
+  );
 });

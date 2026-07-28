@@ -170,3 +170,66 @@ test('PDF importer skips extraction and OCR for an existing hash', async () => {
   assert.equal(result.ocrPageCount, 0);
   assert.equal(extractionCalled, false);
 });
+
+test('duplicate licensed PDFs grant a new entitlement without reprocessing', async () => {
+  let granted;
+  let extractionCalled = false;
+  const buffer = Buffer.from(
+    '%PDF-1.7\nlicensed copy'
+  );
+  const result = await importPdfBuffer({
+    buffer,
+    metadata: {
+      ...metadata(),
+      rights: 'licensed-user-copy',
+      access: {
+        schoolId: 'school-two',
+      },
+    },
+    store: {
+      findDocumentByHash() {
+        return {
+          id: 'licensed-document',
+          rights: 'licensed-user-copy',
+          pageCount: 200,
+        };
+      },
+      grantDocumentEntitlements(
+        documentId,
+        access,
+        rights
+      ) {
+        granted = {
+          documentId,
+          access,
+          rights,
+        };
+        return [
+          {
+            principalType: 'school',
+            principalId: access.schoolId,
+          },
+        ];
+      },
+    },
+    extractPages: async () => {
+      extractionCalled = true;
+      throw new Error(
+        'duplicate should not be extracted'
+      );
+    },
+  });
+
+  assert.equal(extractionCalled, false);
+  assert.deepEqual(granted, {
+    documentId: 'licensed-document',
+    access: {
+      schoolId: 'school-two',
+    },
+    rights: 'licensed-user-copy',
+  });
+  assert.equal(
+    result.entitlements[0].principalId,
+    'school-two'
+  );
+});

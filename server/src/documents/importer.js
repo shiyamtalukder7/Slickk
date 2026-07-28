@@ -65,6 +65,13 @@ async function importPdfBuffer({
       );
 
     if (existing) {
+      const entitlements =
+        ownedStore.grantDocumentEntitlements?.(
+          existing.id,
+          metadata.access,
+          existing.rights
+        ) || [];
+
       onProgress({
         phase: 'duplicate',
         document: existing,
@@ -78,6 +85,7 @@ async function importPdfBuffer({
         pageCount: existing.pageCount,
         ocrPageCount: 0,
         pagesNeedingOcr: 0,
+        entitlements,
       };
     }
 

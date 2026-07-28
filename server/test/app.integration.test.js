@@ -132,10 +132,27 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
   const {
     createCurriculumStore,
   } = require('../src/storage/curriculum');
+  const {
+    createSchoolStore,
+  } = require('../src/storage/schools');
   const conversationStore =
     createConversationStore(':memory:');
   const curriculumStore =
     createCurriculumStore(':memory:');
+  const schoolStore = createSchoolStore(':memory:');
+  schoolStore.importSchools([
+    {
+      id: 'banbeis-123456',
+      eiin: '123456',
+      name: 'EXAMPLE SCHOOL',
+      district: 'DHAKA',
+      upazila: 'DHANMONDI',
+      address: 'DHAKA',
+      source: 'BANBEIS institute directory',
+      sourceYear: '2015',
+      sourceUrl: 'https://banbeis.gov.bd/schools.pdf',
+    },
+  ]);
   curriculumStore.importDocument({
     sha256: 'integration-textbook-hash',
     metadata: {
@@ -156,10 +173,34 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
       },
     ],
   });
+  curriculumStore.importDocument({
+    sha256: 'integration-licensed-book-hash',
+    metadata: {
+      title: 'Licensed International Mathematics',
+      curriculum: 'Cambridge International',
+      academicYear: '2026',
+      grade: 'Class 3',
+      subject: 'Mathematics',
+      language: 'English',
+      version: 'Cambridge Primary',
+      sourceUrl: '',
+      rights: 'licensed-user-copy',
+      access: {
+        schoolId: 'banbeis-123456',
+      },
+    },
+    pages: [
+      {
+        pageNumber: 9,
+        text: 'Place value describes the value of a digit according to its position.',
+      },
+    ],
+  });
   const gateway = createServer(
     createApp({
       conversationStore,
       curriculumStore,
+      schoolStore,
     })
   );
   const gatewayPort = await listen(gateway);
@@ -167,6 +208,7 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
   context.after(async () => {
     conversationStore.close();
     curriculumStore.close();
+    schoolStore.close();
     await close(gateway);
     await close(fakeOllama);
   });
@@ -178,6 +220,82 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
 
   assert.equal(healthResponse.status, 200);
   assert.equal(health.ok, true);
+
+  const optionsResponse = await fetch(
+    `http://127.0.0.1:${gatewayPort}/api/profile-options`
+  );
+  const options = await optionsResponse.json();
+
+  assert.equal(optionsResponse.status, 200);
+  assert.equal(options.grades.length, 12);
+  assert.equal(options.schoolDirectory.schoolCount, 1);
+
+  const pathwaysResponse = await fetch(
+    `http://127.0.0.1:${gatewayPort}/api/curricula/english-medium`
+  );
+  const pathways = await pathwaysResponse.json();
+
+  assert.equal(pathwaysResponse.status, 200);
+  assert.equal(pathways.pathways.length, 3);
+  assert.match(
+    pathways.contentPolicy.licensedTextbooks,
+    /assigned school or student/i
+  );
+
+  const schoolsResponse = await fetch(
+    `http://127.0.0.1:${gatewayPort}/api/schools/search?q=Example`
+  );
+  const schools = await schoolsResponse.json();
+
+  assert.equal(schoolsResponse.status, 200);
+  assert.equal(schools.schools[0].eiin, '123456');
+
+  const profileResponse = await fetch(
+    `http://127.0.0.1:${gatewayPort}/api/students/local-student/profile`,
+    {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        studentName: 'Ari',
+        teachingLanguage: 'english',
+        curriculumTrack: 'nctb-english-version',
+        grade: 'Class 3',
+        school: {
+          id: 'banbeis-123456',
+          name: 'EXAMPLE SCHOOL',
+          eiin: '123456',
+          district: 'DHAKA',
+          upazila: 'DHANMONDI',
+          custom: false,
+        },
+        subjects: ['Mathematics', 'English'],
+        setupComplete: true,
+      }),
+    }
+  );
+  const savedProfile = await profileResponse.json();
+
+  assert.equal(profileResponse.status, 200);
+  assert.equal(
+    savedProfile.profile.curriculumTrack,
+    'nctb-english-version'
+  );
+
+  const publicDocumentsResponse = await fetch(
+    `http://127.0.0.1:${gatewayPort}/api/documents`
+  );
+  const publicDocuments =
+    await publicDocumentsResponse.json();
+  const studentDocumentsResponse = await fetch(
+    `http://127.0.0.1:${gatewayPort}/api/documents?studentId=local-student`
+  );
+  const studentDocuments =
+    await studentDocumentsResponse.json();
+
+  assert.equal(publicDocuments.documents.length, 1);
+  assert.equal(studentDocuments.documents.length, 2);
 
   const tutorResponse = await fetch(
     `http://127.0.0.1:${gatewayPort}/api/tutor`,
@@ -250,6 +368,11 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
     streamEvents.at(-1).learnerProfile.totalTurns,
     2
   );
+  assert.equal(
+    streamEvents.at(-1).learnerProfile.educationProfile
+      .grade,
+    'Class 3'
+  );
 
   const progressResponse = await fetch(
     `http://127.0.0.1:${gatewayPort}/api/students/local-student/progress`
@@ -258,6 +381,10 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
 
   assert.equal(progressResponse.status, 200);
   assert.equal(progress.profile.totalTurns, 2);
+  assert.equal(
+    progress.profile.educationProfile.school.eiin,
+    '123456'
+  );
   assert.equal(
     progress.profile.subjects[0].subjectKey,
     'mathematics'

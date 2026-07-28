@@ -6,8 +6,19 @@ const express = require('express');
 const { config } = require('./config');
 const { parseTutorRequest } = require('./contracts/tutor');
 const {
+  ENGLISH_MEDIUM_PATHWAYS,
+  qualificationForProfile,
+} = require('./catalog/english-medium');
+const {
   createTutorPlan,
 } = require('./pedagogy/orchestrator');
+const {
+  curriculumSearchFilters,
+  findCurriculumTrack,
+  parseStudentEducationProfile,
+  profileOptions,
+  teachingLanguageName,
+} = require('./profiles/student');
 const {
   checkOllamaHealth,
   OllamaError,
@@ -25,6 +36,10 @@ const {
   createCurriculumStore,
   CurriculumStoreError,
 } = require('./storage/curriculum');
+const {
+  createSchoolStore,
+  SchoolStoreError,
+} = require('./storage/schools');
 
 function corsOptions(request, callback) {
   const origin = request.header('Origin');
@@ -43,7 +58,8 @@ function errorStatus(error) {
   if (
     error instanceof OllamaError ||
     error instanceof ConversationStoreError ||
-    error instanceof CurriculumStoreError
+    error instanceof CurriculumStoreError ||
+    error instanceof SchoolStoreError
   ) {
     return error.status;
   }
@@ -55,7 +71,8 @@ function errorCode(error) {
   if (
     error instanceof OllamaError ||
     error instanceof ConversationStoreError ||
-    error instanceof CurriculumStoreError
+    error instanceof CurriculumStoreError ||
+    error instanceof SchoolStoreError
   ) {
     return error.code;
   }
@@ -75,9 +92,12 @@ function createApp(options = {}) {
     options.conversationStore || createConversationStore();
   const curriculumStore =
     options.curriculumStore || createCurriculumStore();
+  const schoolStore =
+    options.schoolStore || createSchoolStore();
 
   app.locals.conversationStore = conversationStore;
   app.locals.curriculumStore = curriculumStore;
+  app.locals.schoolStore = schoolStore;
 
   app.disable('x-powered-by');
   app.use(cors(corsOptions));
@@ -109,6 +129,25 @@ function createApp(options = {}) {
     next();
   });
 
+  function curriculumAccessForStudent(studentId) {
+    if (!studentId) {
+      return {
+        studentId: '',
+        schoolId: '',
+      };
+    }
+
+    const profile =
+      conversationStore.getLearnerProfile(
+        studentId
+      ).educationProfile;
+
+    return {
+      studentId,
+      schoolId: profile?.school?.id || '',
+    };
+  }
+
   function prepareConversation(requestData) {
     const conversation =
       conversationStore.getOrCreateConversation({
@@ -131,15 +170,64 @@ function createApp(options = {}) {
       conversationStore.getLearnerProfile(
         requestData.studentId
       );
+    const educationProfile =
+      learnerProfile.educationProfile;
+    const curriculumTrack =
+      findCurriculumTrack(
+        educationProfile?.curriculumTrack
+      );
+    const qualification =
+      qualificationForProfile(
+        educationProfile?.curriculumTrack,
+        educationProfile?.grade
+      );
+    const effectiveRequestData =
+      educationProfile?.setupComplete
+        ? {
+            ...requestData,
+            studentName:
+              educationProfile.studentName,
+            grade: educationProfile.grade,
+            language: teachingLanguageName(
+              educationProfile.teachingLanguage
+            ),
+            schoolName:
+              educationProfile.school?.name || '',
+            schoolEiin:
+              educationProfile.school?.eiin || '',
+            curriculumTrack:
+              curriculumTrack?.name || '',
+            curriculumTrackId:
+              curriculumTrack?.id || '',
+            enrolledSubjects:
+              educationProfile.subjects || [],
+            qualificationStage:
+              qualification?.stage || '',
+            qualificationProvider:
+              qualification?.provider || '',
+          }
+        : requestData;
     const pedagogyPlan = createTutorPlan({
-      requestData,
+      requestData: effectiveRequestData,
       history,
       learnerProfile,
     });
     const curriculumEvidence =
-      curriculumStore.search(requestData.message, 4);
+      curriculumStore.search(
+        effectiveRequestData.message,
+        4,
+        {
+          ...curriculumSearchFilters(
+            educationProfile,
+            pedagogyPlan.subject
+          ),
+          ...curriculumAccessForStudent(
+            effectiveRequestData.studentId
+          ),
+        }
+      );
     const enrichedRequestData = {
-      ...requestData,
+      ...effectiveRequestData,
       pedagogyPlan,
       learnerMemory: pedagogyPlan.relevantMemory,
       curriculumEvidence,
@@ -148,8 +236,8 @@ function createApp(options = {}) {
     const studentMessage = conversationStore.saveMessage({
       conversationId: conversation.id,
       role: 'student',
-      text: requestData.message,
-      mode: requestData.mode,
+      text: effectiveRequestData.message,
+      mode: effectiveRequestData.mode,
     });
 
     return {
@@ -179,7 +267,7 @@ function createApp(options = {}) {
     response.json({
       status: 'online',
       service: 'Slickk Local Intelligence Core',
-      version: '5.0.0',
+      version: '7.0.0',
       provider: 'ollama',
       model: config.ollamaModel,
       storage: 'local-sqlite',
@@ -188,6 +276,12 @@ function createApp(options = {}) {
         'streaming responses',
         'persistent conversations',
         'persistent learner profiles',
+        'school and curriculum profiles',
+        'profile-filtered textbook retrieval',
+        'Bangladesh school directory search',
+        'international qualification pathways',
+        'school-scoped licensed textbooks',
+        'free official syllabus PDF grounding',
         'subject-aware pedagogy',
         'page-grounded curriculum retrieval',
         'Bangla and English textbook search',
@@ -236,6 +330,134 @@ function createApp(options = {}) {
   });
 
   app.get(
+    '/api/profile-options',
+    (request, response) => {
+      return response.json({
+        ...profileOptions(),
+        schoolDirectory: schoolStore.status(),
+        requestId: request.requestId,
+      });
+    }
+  );
+
+  app.get(
+    '/api/curricula/english-medium',
+    (request, response) => {
+      return response.json({
+        pathways: ENGLISH_MEDIUM_PATHWAYS,
+        contentPolicy: {
+          officialPublicPdfs:
+            'Available to all matching student profiles.',
+          licensedTextbooks:
+            'Available only to the assigned school or student profile.',
+        },
+        requestId: request.requestId,
+      });
+    }
+  );
+
+  app.get('/api/schools/search', (request, response) => {
+    try {
+      const query =
+        typeof request.query.q === 'string'
+          ? request.query.q.trim()
+          : '';
+      const limit = Number(request.query.limit);
+
+      return response.json({
+        query,
+        schools: schoolStore.search(
+          query,
+          Number.isInteger(limit) ? limit : 15
+        ),
+        directory: schoolStore.status(),
+        requestId: request.requestId,
+      });
+    } catch (error) {
+      return response.status(errorStatus(error)).json({
+        error: error.message,
+        code: errorCode(error),
+        requestId: request.requestId,
+      });
+    }
+  });
+
+  app.get(
+    '/api/students/:studentId/profile',
+    (request, response) => {
+      const studentId =
+        String(request.params.studentId || '').trim();
+
+      if (!studentId || studentId.length > 120) {
+        return response.status(400).json({
+          error: 'Please provide a valid student ID.',
+          code: 'INVALID_STUDENT_ID',
+          requestId: request.requestId,
+        });
+      }
+
+      const learnerProfile =
+        conversationStore.getLearnerProfile(studentId);
+
+      return response.json({
+        studentId,
+        profile: learnerProfile.educationProfile,
+        learningSummary: {
+          totalTurns: learnerProfile.totalTurns,
+          subjects: learnerProfile.subjects,
+          activeMisconceptions:
+            learnerProfile.activeMisconceptions,
+        },
+        requestId: request.requestId,
+      });
+    }
+  );
+
+  app.put(
+    '/api/students/:studentId/profile',
+    (request, response) => {
+      const studentId =
+        String(request.params.studentId || '').trim();
+
+      if (!studentId || studentId.length > 120) {
+        return response.status(400).json({
+          error: 'Please provide a valid student ID.',
+          code: 'INVALID_STUDENT_ID',
+          requestId: request.requestId,
+        });
+      }
+
+      const parsed =
+        parseStudentEducationProfile(request.body);
+
+      if (!parsed.success) {
+        return response.status(400).json({
+          error: 'Please check the student profile.',
+          code: 'INVALID_STUDENT_PROFILE',
+          issues: parsed.issues,
+          requestId: request.requestId,
+        });
+      }
+
+      const learnerProfile =
+        conversationStore.saveEducationProfile({
+          studentId,
+          profile: parsed.data,
+          language: teachingLanguageName(
+            parsed.data.teachingLanguage
+          ),
+        });
+
+      return response.json({
+        ok: true,
+        studentId,
+        profile: learnerProfile.educationProfile,
+        requestId: request.requestId,
+      });
+    }
+  );
+
+  app.get(
     '/api/students/:studentId/progress',
     (request, response) => {
       const studentId =
@@ -260,8 +482,16 @@ function createApp(options = {}) {
   );
 
   app.get('/api/documents', (request, response) => {
+    const studentId =
+      typeof request.query.studentId === 'string'
+        ? request.query.studentId.trim()
+        : '';
+
     return response.json({
-      documents: curriculumStore.listDocuments(),
+      documents: curriculumStore.listDocuments(
+        100,
+        curriculumAccessForStudent(studentId)
+      ),
       requestId: request.requestId,
     });
   });
@@ -279,12 +509,25 @@ function createApp(options = {}) {
     }
 
     try {
+      const filters =
+        request.body?.filters &&
+        typeof request.body.filters === 'object'
+          ? request.body.filters
+          : {};
+      const studentId =
+        typeof request.body?.studentId === 'string'
+          ? request.body.studentId.trim()
+          : '';
       const results = curriculumStore
         .search(
           query,
           Number.isInteger(requestedLimit)
             ? requestedLimit
-            : 5
+            : 5,
+          {
+            ...filters,
+            ...curriculumAccessForStudent(studentId),
+          }
         )
         .map(({ content, ...citation }) => citation);
 
@@ -434,7 +677,8 @@ function createApp(options = {}) {
         error:
           error instanceof OllamaError ||
           error instanceof ConversationStoreError ||
-          error instanceof CurriculumStoreError
+          error instanceof CurriculumStoreError ||
+          error instanceof SchoolStoreError
             ? error.message
             : 'Slickk could not prepare the tutor response.',
         code: errorCode(error),
