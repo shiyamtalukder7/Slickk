@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slickk-runtime"
+version = "0.1.0"
+description = "Slickk native local educational AI runtime"
+requires-python = ">=3.11"
+
+[project.scripts]
+slickk = "slickk_server.cli:main"
+
+[tool.setuptools]
+packages = [
+    "slickk_models",
+    "slickk_runtime",
+    "slickk_server"
+]
+include-package-data = true
+
+[tool.setuptools.package-data]
+slickk_models = ["*.json"]
