@@ -201,7 +201,7 @@ class SlickkRequestHandler(BaseHTTPRequestHandler):
 
                 self.send_json(
                     200,
-                    RUNTIME_MANAGER.generate(prompt),
+                    RUNTIME_MANAGER.generate(prompt, payload.get("max_new_tokens", 96)),
                 )
                 return
 
@@ -240,3 +240,4 @@ def serve(host: str = "127.0.0.1", port: int = 11435) -> None:
         print("\nStopping Slickk server...")
     finally:
         server.server_close()
+
