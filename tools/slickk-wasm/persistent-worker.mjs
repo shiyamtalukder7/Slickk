@@ -1,5 +1,10 @@
-import { env, pipeline } from "@huggingface/transformers";
 import readline from "node:readline";
+
+import {
+  env,
+  pipeline,
+  TextStreamer,
+} from "@huggingface/transformers";
 
 env.cacheDir = "./.cache";
 env.allowRemoteModels = true;
@@ -27,6 +32,14 @@ function extractAssistantText(output) {
   }
 
   return "";
+}
+
+function normalizeMaxNewTokens(value) {
+  if (!Number.isInteger(value)) {
+    return 96;
+  }
+
+  return Math.min(Math.max(value, 1), 256);
 }
 
 async function main() {
@@ -64,6 +77,7 @@ async function main() {
         ok: false,
         error: "The request must contain valid JSON.",
       });
+
       continue;
     }
 
@@ -72,6 +86,7 @@ async function main() {
         ok: true,
         event: "shutdown",
       });
+
       break;
     }
 
@@ -82,45 +97,83 @@ async function main() {
         ok: false,
         error: "A non-empty prompt is required.",
       });
+
       continue;
     }
 
-    const maxNewTokens = Number.isInteger(
+    const maxNewTokens = normalizeMaxNewTokens(
       request.max_new_tokens,
-    )
-      ? Math.min(
-          Math.max(request.max_new_tokens, 1),
-          256,
-        )
-      : 96;
+    );
+
+    const messages = [
+      {
+        role: "system",
+        content:
+          "You are Slickk, a helpful private educational tutor. " +
+          "Give accurate, clear, concise, and age-appropriate answers.",
+      },
+      {
+        role: "user",
+        content: prompt.trim(),
+      },
+    ];
 
     try {
-      const messages = [
-        {
-          role: "system",
-          content:
-            "You are Slickk, a helpful private educational tutor. " +
-            "Give accurate, clear and age-appropriate answers.",
-        },
-        {
-          role: "user",
-          content: prompt.trim(),
-        },
-      ];
+      const streamRequested = request.stream === true;
 
-      const output = await generator(messages, {
-  max_new_tokens: maxNewTokens,
-  do_sample: false,
-  return_full_text: false,
-});
+      if (streamRequested) {
+        const requestId =
+          request.id ?? `slickk-${Date.now()}`;
 
-      send({
-        ok: true,
-        text: extractAssistantText(output),
-        model: "slickk-edu-local",
-        backend: "transformers-js-onnx-cpu",
-        max_new_tokens: maxNewTokens,
-      });
+        const streamer = new TextStreamer(
+          generator.tokenizer,
+          {
+            skip_prompt: true,
+            skip_special_tokens: true,
+            callback_function: (text) => {
+              if (!text) {
+                return;
+              }
+
+              send({
+                event: "chunk",
+                id: requestId,
+                text,
+              });
+            },
+          },
+        );
+
+        await generator(messages, {
+          max_new_tokens: maxNewTokens,
+          do_sample: false,
+          return_full_text: false,
+          streamer,
+        });
+
+        send({
+          ok: true,
+          event: "done",
+          id: requestId,
+          model: "slickk-edu-local",
+          backend: "transformers-js-onnx-cpu",
+          max_new_tokens: maxNewTokens,
+        });
+      } else {
+        const output = await generator(messages, {
+          max_new_tokens: maxNewTokens,
+          do_sample: false,
+          return_full_text: false,
+        });
+
+        send({
+          ok: true,
+          text: extractAssistantText(output),
+          model: "slickk-edu-local",
+          backend: "transformers-js-onnx-cpu",
+          max_new_tokens: maxNewTokens,
+        });
+      }
     } catch (error) {
       send({
         ok: false,
@@ -131,6 +184,8 @@ async function main() {
       });
     }
   }
+
+  input.close();
 }
 
 main().catch((error) => {
