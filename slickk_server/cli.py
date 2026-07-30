@@ -6,6 +6,7 @@ from pathlib import Path
 
 from slickk_models import ModelRegistry
 from slickk_server.diagnose import main as diagnose_main
+from slickk_server.http_server import serve
 
 
 def project_root() -> Path:
@@ -48,6 +49,24 @@ def main() -> None:
         help="List registered Slickk models",
     )
 
+    serve_parser = subcommands.add_parser(
+        "serve",
+        help="Start the Slickk local HTTP server",
+    )
+
+    serve_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Server address",
+    )
+
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=11435,
+        help="Server port",
+    )
+
     arguments = parser.parse_args()
 
     if arguments.command == "diagnose":
@@ -56,6 +75,10 @@ def main() -> None:
 
     if arguments.command == "models":
         list_models()
+        return
+
+    if arguments.command == "serve":
+        serve(arguments.host, arguments.port)
         return
 
     parser.print_help()
