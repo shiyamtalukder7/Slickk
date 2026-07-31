@@ -2,6 +2,8 @@ import unittest
 
 from slickk_server.knowledge_base import (
     resolve_curriculum_id,
+    resolve_level_id,
+    resolve_subject_id,
     retrieve_knowledge,
 )
 from slickk_server.tutor_engine import (
@@ -171,6 +173,57 @@ class RespirationQualityTests(unittest.TestCase):
             topic="Respiration",
             grade="Class 7",
             curriculum="cambridge-international",
+            language="english",
+            query="Explain respiration.",
+        )
+
+        self.assertEqual(documents, [])
+
+
+    def test_mobile_subject_aliases_are_resolved(self) -> None:
+        self.assertEqual(
+            resolve_subject_id("Biology"),
+            "biology",
+        )
+        self.assertEqual(
+            resolve_subject_id("Science"),
+            "general-science",
+        )
+        self.assertEqual(
+            resolve_subject_id(
+                "Information and Communication Technology"
+            ),
+            "ict",
+        )
+
+    def test_grade_and_class_labels_are_equivalent(self) -> None:
+        self.assertEqual(
+            resolve_level_id("Class 7"),
+            "class-7",
+        )
+        self.assertEqual(
+            resolve_level_id("Grade 7"),
+            "class-7",
+        )
+
+    def test_chemistry_cannot_use_biology_lesson(self) -> None:
+        documents = retrieve_knowledge(
+            subject="Chemistry",
+            topic="Respiration",
+            grade="Class 7",
+            curriculum="nctb-english-version",
+            language="english",
+            query="Explain respiration.",
+        )
+
+        self.assertEqual(documents, [])
+
+    def test_class_8_cannot_use_class_7_lesson(self) -> None:
+        documents = retrieve_knowledge(
+            subject="Biology",
+            topic="Respiration",
+            grade="Class 8",
+            curriculum="nctb-english-version",
             language="english",
             query="Explain respiration.",
         )

@@ -20,6 +20,10 @@ CURRICULUM_CATALOG_PATH = (
     KNOWLEDGE_DIR / "curricula" / "catalog.json"
 )
 
+SUBJECT_CATALOG_PATH = (
+    KNOWLEDGE_DIR / "subjects.json"
+)
+
 CURRICULUM_ALIASES = {
     "nctb bangla version": "nctb-bangla",
     "nctb bangla medium": "nctb-bangla",
@@ -27,6 +31,24 @@ CURRICULUM_ALIASES = {
     "cambridge international": "cambridge",
     "pearson edexcel": "edexcel",
     "pearson edexcel international": "edexcel",
+}
+
+SUBJECT_ALIASES = {
+    "science": "general-science",
+    "general science": "general-science",
+    "ict": "ict",
+    "information and communication technology": "ict",
+    "bangladesh and global studies":
+        "bangladesh-global-studies",
+    "higher mathematics": "higher-mathematics",
+    "computer science": "computer-science",
+    "finance and banking": "finance-banking",
+    "business entrepreneurship":
+        "business-entrepreneurship",
+    "religion and moral education": "religion",
+    "agricultural studies": "agriculture",
+    "physical education and health":
+        "physical-education",
 }
 
 
@@ -54,6 +76,77 @@ def load_curriculum_catalog() -> list[dict[str, Any]]:
         if isinstance(item, dict)
         and isinstance(item.get("id"), str)
     ]
+
+
+@lru_cache(maxsize=1)
+def load_subject_catalog() -> list[dict[str, Any]]:
+    """Load registered subject definitions."""
+
+    try:
+        with SUBJECT_CATALOG_PATH.open(
+            "r",
+            encoding="utf-8-sig",
+        ) as file:
+            payload = json.load(file)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return []
+
+    subjects = payload.get("subjects")
+
+    if not isinstance(subjects, list):
+        return []
+
+    return [
+        item
+        for item in subjects
+        if isinstance(item, dict)
+        and isinstance(item.get("id"), str)
+    ]
+
+
+def resolve_subject_id(value: str) -> str:
+    """Resolve subject names and mobile labels to subject IDs."""
+
+    normalized = normalize(str(value))
+
+    if not normalized:
+        return ""
+
+    alias = SUBJECT_ALIASES.get(normalized)
+
+    if alias:
+        return alias
+
+    for subject in load_subject_catalog():
+        subject_id = str(subject.get("id", ""))
+        subject_name = str(subject.get("name", ""))
+
+        if normalized in {
+            normalize(subject_id),
+            normalize(subject_name),
+        }:
+            return subject_id
+
+    return normalized.replace(" ", "-")
+
+
+def resolve_level_id(value: str) -> str:
+    """Normalize class and grade labels for exact matching."""
+
+    normalized = normalize(str(value))
+
+    if not normalized:
+        return ""
+
+    class_match = re.fullmatch(
+        r"(?:class|grade)\s*(\d{1,2})",
+        normalized,
+    )
+
+    if class_match:
+        return f"class-{int(class_match.group(1))}"
+
+    return normalized.replace(" ", "-")
 
 
 def resolve_curriculum_id(value: str) -> str:
@@ -173,6 +266,8 @@ def retrieve_knowledge(
     requested_curriculum_id = resolve_curriculum_id(
         curriculum
     )
+    requested_subject_id = resolve_subject_id(subject)
+    requested_level_id = resolve_level_id(grade)
     requested_language = normalize_language(language)
 
     search_text = normalize(
@@ -194,12 +289,35 @@ def retrieve_knowledge(
         document_curriculum_id = resolve_curriculum_id(
             str(document.get("curriculum", ""))
         )
+        document_subject_id = resolve_subject_id(
+            str(document.get("subject", ""))
+        )
+        document_level_id = resolve_level_id(
+            str(
+                document.get("level")
+                or document.get("grade", "")
+            )
+        )
 
         # Never mix lessons from different curriculum tracks.
         if (
             requested_curriculum_id
             and document_curriculum_id
             != requested_curriculum_id
+        ):
+            continue
+
+        # Never use one subject's lesson for another subject.
+        if (
+            requested_subject_id
+            and document_subject_id != requested_subject_id
+        ):
+            continue
+
+        # Never use another class or grade's lesson.
+        if (
+            requested_level_id
+            and document_level_id != requested_level_id
         ):
             continue
 
@@ -233,8 +351,9 @@ def retrieve_knowledge(
         document_terms = set(document_text.split())
         score = len(search_terms & document_terms)
 
-        if normalize(subject) == normalize(
-            str(document.get("subject", ""))
+        if (
+            requested_subject_id
+            and requested_subject_id == document_subject_id
         ):
             score += 8
 
@@ -253,8 +372,9 @@ def retrieve_knowledge(
         ):
             score += 6
 
-        if normalize(grade) == normalize(
-            str(document.get("grade", ""))
+        if (
+            requested_level_id
+            and requested_level_id == document_level_id
         ):
             score += 4
 
