@@ -1,0 +1,129 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from slickk_server.textbook_ingest import (
+    TextbookIngestError,
+    ingest_textbook,
+    split_text,
+)
+
+
+class TextbookIngestTests(unittest.TestCase):
+    def test_split_text_creates_bounded_chunks(self) -> None:
+        text = " ".join(
+            f"Sentence number {index} contains lesson content."
+            for index in range(30)
+        )
+
+        chunks = split_text(
+            text,
+            max_chars=180,
+            overlap_chars=25,
+        )
+
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(
+            all(
+                1 <= len(chunk) <= 180
+                for chunk in chunks
+            )
+        )
+
+    def test_plain_text_is_staged_for_review(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "biology.txt"
+            output_directory = root / "output"
+
+            source.write_text(
+                (
+                    "Respiration releases energy from glucose "
+                    "inside living cells. "
+                )
+                * 30,
+                encoding="utf-8",
+            )
+
+            output_path, payload = ingest_textbook(
+                source,
+                curriculum="nctb-english-version",
+                level="Class 7",
+                subject="Biology",
+                language="English",
+                title="Class 7 Biology",
+                output_directory=output_directory,
+                max_chars=300,
+                overlap_chars=30,
+            )
+
+            self.assertTrue(output_path.exists())
+            self.assertEqual(
+                payload["status"],
+                "needs_human_review",
+            )
+            self.assertFalse(
+                payload["production_knowledge"]
+            )
+            self.assertEqual(
+                payload["metadata"]["curriculum"],
+                "nctb-english-version",
+            )
+            self.assertEqual(
+                payload["metadata"]["level"],
+                "Class 7",
+            )
+            self.assertEqual(
+                payload["metadata"]["subject"],
+                "biology",
+            )
+            self.assertGreater(
+                len(payload["chunks"]),
+                1,
+            )
+            self.assertTrue(
+                all(
+                    not chunk["review"]["approved"]
+                    for chunk in payload["chunks"]
+                )
+            )
+
+    def test_unknown_curriculum_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "lesson.txt"
+            source.write_text(
+                "A valid lesson paragraph.",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(TextbookIngestError):
+                ingest_textbook(
+                    source,
+                    curriculum="unknown-board",
+                    level="Class 7",
+                    subject="Biology",
+                    language="English",
+                    output_directory=directory,
+                )
+
+    def test_empty_source_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "empty.txt"
+            source.write_text(
+                "   \n\n   ",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(TextbookIngestError):
+                ingest_textbook(
+                    source,
+                    curriculum="nctb-english-version",
+                    level="Class 7",
+                    subject="Biology",
+                    language="English",
+                    output_directory=directory,
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()
