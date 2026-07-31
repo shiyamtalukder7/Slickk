@@ -215,16 +215,56 @@ export async function streamTutorResponse(
   signal: AbortSignal,
   callbacks: StreamCallbacks
 ): Promise<CompleteEvent> {
+  const conversationId =
+    request.conversationId ??
+    `local-conversation-${Date.now()}`;
+
+  const requestId = `tutor-request-${Date.now()}`;
+
+  callbacks.onStart?.({
+    type: 'start',
+    requestId,
+    conversationId,
+    model: 'slickk-edu-local',
+  });
+
+  const messages = [
+    ...request.recentMessages.map((message) => ({
+      role:
+        message.role === 'student'
+          ? ('user' as const)
+          : ('assistant' as const),
+      content: message.text,
+    })),
+    {
+      role: 'user' as const,
+      content: request.message,
+    },
+  ];
+
   const response = await expoFetch(
-    getSlickkApiUrl('/api/tutor/stream'),
+    getSlickkApiUrl('/v1/tutor/chat'),
     {
       method: 'POST',
       headers: {
-        Accept: 'application/x-ndjson',
+        Accept: 'application/json',
         'Content-Type': 'application/json',
       },
       signal,
-      body: JSON.stringify(request),
+      body: JSON.stringify({
+        model: 'slickk-edu-local',
+        student: {
+          name: request.studentName,
+          grade: request.grade,
+          curriculum: 'Slickk Local Curriculum',
+        },
+        language: request.language,
+        subject: 'General Studies',
+        topic: request.message.slice(0, 120),
+        teaching_method: request.mode,
+        max_tokens: 64,
+        messages,
+      }),
     }
   );
 
@@ -232,81 +272,78 @@ export async function streamTutorResponse(
     throw await readHttpError(response);
   }
 
-  if (!response.body) {
+  const data: unknown = await response.json();
+
+  if (
+    !isRecord(data) ||
+    !isRecord(data.message) ||
+    typeof data.message.content !== 'string'
+  ) {
     throw new TutorStreamError(
-      'Streaming is unavailable on this device.',
-      'STREAM_UNAVAILABLE'
+      'The Slickk tutor returned an invalid response.',
+      'INVALID_TUTOR_RESPONSE'
     );
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let completedEvent: CompleteEvent | null = null;
+  const reply = data.message.content.trim();
 
-  const processLine = (line: string) => {
-    if (!line.trim()) {
-      return;
-    }
+  if (!reply) {
+    throw new TutorStreamError(
+      'The Slickk tutor returned an empty answer.',
+      'EMPTY_TUTOR_RESPONSE'
+    );
+  }
 
-    const event = parseStreamEvent(line);
+  callbacks.onToken(reply);
 
-    if (event.type === 'start') {
-      callbacks.onStart?.(event);
-      return;
-    }
+  const tutorMetadata = isRecord(data.tutor)
+    ? data.tutor
+    : {};
 
-    if (event.type === 'token') {
-      callbacks.onToken(event.content);
-      return;
-    }
+  const model =
+    typeof data.model === 'string'
+      ? data.model
+      : 'slickk-edu-local';
 
-    if (event.type === 'error') {
-      throw new TutorStreamError(event.error, event.code);
-    }
+  const provider =
+    typeof data.backend === 'string'
+      ? data.backend
+      : 'slickk-native';
 
-    completedEvent = event;
-    callbacks.onComplete?.(event);
+  const messageId =
+    typeof data.id === 'string'
+      ? data.id
+      : `tutor-message-${Date.now()}`;
+
+  const topic =
+    typeof tutorMetadata.topic === 'string'
+      ? tutorMetadata.topic
+      : request.message.slice(0, 120);
+
+  const completedEvent: CompleteEvent = {
+    type: 'complete',
+    reply,
+    conversationId,
+    messageId,
+    learningTwin: {
+      topic,
+      skill: request.mode,
+      misconception: '',
+      nextAction:
+        'Continue the lesson and check the student?s understanding.',
+      confidence: 0.5,
+      masteryDelta: 0,
+    },
+    metadata: {
+      provider,
+      model,
+      requestId,
+      generatedAt: new Date().toISOString(),
+    },
   };
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
+  callbacks.onComplete?.(completedEvent);
 
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, {
-        stream: true,
-      });
-
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() ?? '';
-
-      for (const line of lines) {
-        processLine(line);
-      }
-    }
-
-    buffer += decoder.decode();
-
-    if (buffer.trim()) {
-      processLine(buffer);
-    }
-  } finally {
-    await reader.cancel().catch(() => {});
-  }
-
-  const finalEvent =
-    completedEvent as CompleteEvent | null;
-
-  if (!finalEvent) {
-    throw new TutorStreamError(
-      'The tutor stream ended before the answer was complete.',
-      'INCOMPLETE_STREAM'
-    );
-  }
-
-  return finalEvent;
+  return completedEvent;
 }
+
