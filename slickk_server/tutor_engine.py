@@ -188,8 +188,86 @@ def build_verified_response(
     return response
 
 
-def model_response_is_low_quality(text: Any) -> bool:
-    """Detect obviously unreliable or malformed model output."""
+def respiration_response_has_contradiction(
+    text: str,
+) -> bool:
+    """Detect factual contradictions in respiration explanations."""
+
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", text.lower())
+        if sentence.strip()
+    ]
+
+    contradiction_patterns = (
+        # Respiration incorrectly located in breathing organs.
+        r"\brespiration\s+(?:happens|occurs|takes place)"
+        r"\s+(?:mainly\s+)?in\s+(?:the\s+)?"
+        r"(?:lungs|nose|nostrils|mouth|stomach|windpipe)\b",
+
+        r"\b(?:lungs|nose|nostrils|mouth|stomach|windpipe)\b"
+        r".{0,35}\brespiration\s+(?:happens|occurs|takes place)\b",
+
+        # Respiration incorrectly equated with breathing.
+        r"\brespiration\s+(?:is|means|equals)"
+        r"\s+(?:just\s+|simply\s+)?breathing\b",
+
+        r"\brespiration\s+is\s+(?:the\s+)?same\s+as\s+breathing\b",
+
+        r"\brespiration\s+is\s+another\s+word\s+for\s+breathing\b",
+
+        r"\bbreathing\s+(?:is|means|equals)\s+respiration\b",
+
+        # Oxygen or lungs incorrectly described as creating energy.
+        r"\boxygen\s+(?:creates|produces|makes|generates)\s+energy\b",
+
+        r"\blungs?\s+(?:creates|produces|makes|generates)\s+energy\b",
+
+        # Carbon dioxide incorrectly described as a reactant.
+        r"\b(?:aerobic\s+)?respiration\s+"
+        r"(?:uses|needs|requires)\s+carbon\s+dioxide\b",
+
+        r"\bcarbon\s+dioxide\s+is\s+(?:a|the)\s+"
+        r"(?:main\s+)?reactant\b",
+
+        # Stomach incorrectly included in the respiratory system.
+        r"\brespiratory\s+system\b.{0,70}"
+        r"\b(?:includes|contains|consists\s+of|has)\b"
+        r".{0,70}\bstomach\b",
+
+        r"\bstomach\b.{0,40}\b(?:part|organ)\b"
+        r".{0,40}\brespiratory\s+system\b",
+    )
+
+    for sentence in sentences:
+        # Corrective statements containing explicit negation should
+        # not be treated as contradictions.
+        has_negation = bool(
+            re.search(
+                r"\b(?:not|isn't|isnt|doesn't|doesnt|"
+                r"do not|does not|different from)\b",
+                sentence,
+            )
+        )
+
+        if has_negation:
+            continue
+
+        if any(
+            re.search(pattern, sentence)
+            for pattern in contradiction_patterns
+        ):
+            return True
+
+    return False
+
+
+def model_response_is_low_quality(
+    text: Any,
+    *,
+    topic: str = "",
+) -> bool:
+    """Detect unreliable, malformed or contradictory model output."""
 
     if not isinstance(text, str):
         return True
@@ -200,6 +278,14 @@ def model_response_is_low_quality(text: Any) -> bool:
         return True
 
     lowered = stripped.lower()
+
+    normalized_topic = str(topic).strip().lower()
+
+    if (
+        "respiration" in normalized_topic
+        and respiration_response_has_contradiction(lowered)
+    ):
+        return True
 
     suspicious_phrases = (
         "glucose molecules enter our bloodstream via fermentation",
@@ -254,7 +340,10 @@ def select_tutor_response(
 
     if (
         tutor_metadata.get("grounded")
-        and model_response_is_low_quality(model_text)
+        and model_response_is_low_quality(
+            model_text,
+            topic=str(tutor_metadata.get("topic", "")),
+        )
         and isinstance(verified_response, str)
         and verified_response.strip()
     ):
