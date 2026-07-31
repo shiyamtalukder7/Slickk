@@ -1,0 +1,37 @@
+﻿{
+  "documents": [
+    {
+      "id": "biology-grade7-respiration-001",
+      "title": "Respiration in Living Organisms",
+      "subject": "Biology",
+      "topic": "Respiration",
+      "grade": "Grade 7",
+      "curriculum": "IGCSE Edexcel",
+      "language": "English",
+      "source_type": "Slickk verified lesson",
+      "keywords": [
+        "respiration",
+        "aerobic respiration",
+        "glucose",
+        "oxygen",
+        "energy",
+        "carbon dioxide",
+        "water",
+        "breathing"
+      ],
+      "facts": [
+        "Respiration is a chemical process that releases energy from glucose inside living cells.",
+        "Aerobic respiration uses oxygen.",
+        "Aerobic respiration produces carbon dioxide and water while releasing energy.",
+        "The word equation is: glucose plus oxygen produces carbon dioxide plus water and energy.",
+        "Breathing and respiration are different. Breathing moves air into and out of the lungs, while respiration occurs inside cells.",
+        "Living organisms need released energy for movement, growth, repair, active transport and maintaining body temperature."
+      ],
+      "misconceptions": [
+        "Respiration is not simply breathing.",
+        "The lungs do not create energy from oxygen.",
+        "Carbon dioxide is produced during aerobic respiration; it is not used as the main reactant."
+      ]
+    }
+  ]
+}
