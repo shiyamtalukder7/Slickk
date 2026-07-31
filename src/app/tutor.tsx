@@ -1,11 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import {
+  router,
+  useLocalSearchParams,
+} from 'expo-router';
 import * as Speech from 'expo-speech';
 import { useEffect, useRef, useState } from 'react';
 import {
   streamTutorResponse,
   TutorStreamError,
 } from '@/services/tutor-stream';
+import {
+  LOCAL_STUDENT_ID,
+  loadStudentProfile,
+  type StudentEducationProfile,
+} from '@/services/student-profile';
 import {
   ActivityIndicator,
   Alert,
@@ -84,6 +92,18 @@ const LEARNING_MODES: {
 ];
 
 export default function SlickkTutorScreen() {
+  const { subject: requestedSubject } =
+    useLocalSearchParams<{ subject?: string }>();
+
+  const selectedSubject =
+    typeof requestedSubject === 'string' &&
+    requestedSubject.trim()
+      ? requestedSubject.trim()
+      : 'General Studies';
+
+  const [studentProfile, setStudentProfile] =
+    useState<StudentEducationProfile | null>(null);
+
   const [messages, setMessages] =
     useState<Message[]>(STARTER_MESSAGES);
 
@@ -108,6 +128,24 @@ export default function SlickkTutorScreen() {
   const listRef = useRef<FlatList<Message>>(null);
   const activeRequestRef =
     useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    loadStudentProfile()
+      .then((profile) => {
+        if (active) {
+          setStudentProfile(profile);
+        }
+      })
+      .catch(() => {
+        // Keep the tutor usable with safe defaults.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -289,11 +327,21 @@ export default function SlickkTutorScreen() {
       const completed = await streamTutorResponse(
         {
           message: messageText,
-          studentName: 'Student',
-          studentId: 'local-student',
+          studentName:
+            studentProfile?.studentName ?? 'Student',
+          studentId: LOCAL_STUDENT_ID,
           conversationId,
-          grade: 'Grade 7–8',
-          language: 'English',
+          grade:
+            studentProfile?.grade ?? 'Class 7',
+          language:
+            studentProfile?.teachingLanguage ??
+            'english',
+          curriculum:
+            studentProfile?.curriculumTrack ??
+            'nctb-english-version',
+          subject: selectedSubject,
+          topic: messageText.slice(0, 120),
+          school: studentProfile?.school.name,
           channel: 'typed',
           mode: selectedMode,
           recentMessages: messages
@@ -381,7 +429,7 @@ export default function SlickkTutorScreen() {
           ? 'The local tutor took too long to answer. Try a shorter question.'
           : error instanceof TutorStreamError
             ? error.message
-            : 'I could not connect to the Slickk local AI. Make sure Ollama and the Slickk server are running.';
+            : 'I could not connect to Slickk LLM. Make sure the Slickk server and its configured local runtime are running.';
 
         updateTutorMessage(
           tutorMessageId,

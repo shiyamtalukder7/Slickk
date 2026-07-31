@@ -30,6 +30,10 @@ export type TutorStreamRequest = {
   conversationId?: string;
   grade: string;
   language: string;
+  curriculum: string;
+  subject: string;
+  topic?: string;
+  school?: string;
   channel: 'typed' | 'live';
   mode: TutorMode;
   recentMessages: TutorHistoryMessage[];
@@ -256,11 +260,14 @@ export async function streamTutorResponse(
         student: {
           name: request.studentName,
           grade: request.grade,
-          curriculum: 'Slickk Local Curriculum',
+          curriculum: request.curriculum,
+          school: request.school,
         },
         language: request.language,
-        subject: 'General Studies',
-        topic: request.message.slice(0, 120),
+        subject: request.subject,
+        topic:
+          request.topic ??
+          request.message.slice(0, 120),
         teaching_method: request.mode,
         max_tokens: 64,
         messages,

@@ -4,6 +4,7 @@ import { getSlickkApiUrl } from '@/config/api';
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
   type ComponentProps,
 } from 'react';
@@ -18,6 +19,11 @@ import {
   Text,
   View,
 } from 'react-native';
+
+import {
+  loadStudentProfile,
+  type StudentEducationProfile,
+} from '@/services/student-profile';
 
 type IoniconName =
   ComponentProps<typeof Ionicons>['name'];
@@ -77,7 +83,7 @@ const QUICK_TOOLS: QuickTool[] = [
   },
 ];
 
-const SUBJECTS: Subject[] = [
+const DEFAULT_SUBJECTS: Subject[] = [
   {
     id: 'mathematics',
     icon: 'calculator-outline',
@@ -104,18 +110,76 @@ const SUBJECTS: Subject[] = [
   },
 ];
 
+const SUBJECT_DETAILS: Record<
+  string,
+  Pick<Subject, 'icon' | 'subtitle'>
+> = {
+  Mathematics: {
+    icon: 'calculator-outline',
+    subtitle: 'Numbers, algebra and geometry',
+  },
+  English: {
+    icon: 'language-outline',
+    subtitle: 'Reading, writing and grammar',
+  },
+  Bangla: {
+    icon: 'book-outline',
+    subtitle: 'Language, literature and writing',
+  },
+  Science: {
+    icon: 'flask-outline',
+    subtitle: 'Scientific ideas and investigation',
+  },
+  Physics: {
+    icon: 'magnet-outline',
+    subtitle: 'Matter, energy, forces and motion',
+  },
+  Chemistry: {
+    icon: 'beaker-outline',
+    subtitle: 'Materials, reactions and experiments',
+  },
+  Biology: {
+    icon: 'leaf-outline',
+    subtitle: 'Living systems and the environment',
+  },
+  'Higher Mathematics': {
+    icon: 'stats-chart-outline',
+    subtitle: 'Advanced algebra, geometry and calculus',
+  },
+  Accounting: {
+    icon: 'receipt-outline',
+    subtitle: 'Financial records and reporting',
+  },
+  Economics: {
+    icon: 'trending-up-outline',
+    subtitle: 'Markets, choices and development',
+  },
+  History: {
+    icon: 'time-outline',
+    subtitle: 'People, events and historical evidence',
+  },
+  'Geography and Environment': {
+    icon: 'earth-outline',
+    subtitle: 'Places, people and the environment',
+  },
+  'Information and Communication Technology': {
+    icon: 'laptop-outline',
+    subtitle: 'Computing, information and digital systems',
+  },
+};
+
 function getStatusText(
   status: ServerStatus
 ) {
   switch (status) {
     case 'online':
-      return 'LOCAL AI ONLINE';
+      return 'SLICKK LLM ONLINE';
 
     case 'offline':
-      return 'LOCAL AI OFFLINE';
+      return 'SLICKK LLM OFFLINE';
 
     default:
-      return 'CHECKING LOCAL AI';
+      return 'CHECKING SLICKK LLM';
   }
 }
 
@@ -124,19 +188,40 @@ function getStatusDescription(
 ) {
   switch (status) {
     case 'online':
-      return 'Slickk intelligence is connected and ready.';
+      return 'Your private Slickk teaching intelligence is ready.';
 
     case 'offline':
-      return 'Start Ollama and the Slickk Node server on your laptop.';
+      return 'Start the Slickk LLM server and its configured local runtime.';
 
     default:
-      return 'Connecting to your private intelligence server.';
+      return 'Connecting to your private teaching intelligence.';
   }
 }
 
 export default function SlickkDashboardScreen() {
   const [serverStatus, setServerStatus] =
     useState<ServerStatus>('checking');
+  const [studentProfile, setStudentProfile] =
+    useState<StudentEducationProfile | null>(null);
+
+  const dashboardSubjects = useMemo(() => {
+    if (!studentProfile?.subjects.length) {
+      return DEFAULT_SUBJECTS;
+    }
+
+    return studentProfile.subjects.map((title) => {
+      const details = SUBJECT_DETAILS[title];
+
+      return {
+        id: title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        title,
+        icon: details?.icon ?? 'school-outline',
+        subtitle:
+          details?.subtitle ??
+          `Personalized ${title} lessons`,
+      };
+    });
+  }, [studentProfile]);
 
   const checkServer = useCallback(
     async () => {
@@ -173,11 +258,45 @@ export default function SlickkDashboardScreen() {
     void checkServer();
   }, [checkServer]);
 
-  const openLiveTutor = () => {
+  useEffect(() => {
+    let active = true;
+
+    loadStudentProfile()
+      .then((profile) => {
+        if (active) {
+          setStudentProfile(profile);
+        }
+      })
+      .catch(() => {
+        // Keep the dashboard available while the local server is offline.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const openLiveTutor = (subject?: string) => {
+    if (subject) {
+      router.push({
+        pathname: '/live-tutor',
+        params: { subject },
+      });
+      return;
+    }
+
     router.push('/live-tutor');
   };
 
-  const openTypedTutor = () => {
+  const openTypedTutor = (subject?: string) => {
+    if (subject) {
+      router.push({
+        pathname: '/tutor',
+        params: { subject },
+      });
+      return;
+    }
+
     router.push('/tutor');
   };
 
@@ -209,17 +328,17 @@ export default function SlickkDashboardScreen() {
         return;
 
       case 'camera':
-        showComingSoon(
-          'Camera Learn',
-          'Camera and handwriting understanding will be connected after the live voice system is verified.'
-        );
+        router.push({
+          pathname: '/camera-learn',
+          params: { mode: 'camera' },
+        });
         return;
 
       case 'upload':
-        showComingSoon(
-          'Upload Notes',
-          'Document, image and lesson-material uploads are part of the next learning-content stage.'
-        );
+        router.push({
+          pathname: '/camera-learn',
+          params: { mode: 'files' },
+        });
         return;
 
       default:
@@ -240,11 +359,11 @@ export default function SlickkDashboardScreen() {
         },
         {
           text: 'Typed lesson',
-          onPress: openTypedTutor,
+          onPress: () => openTypedTutor(subject.title),
         },
         {
           text: 'Live lesson',
-          onPress: openLiveTutor,
+          onPress: () => openLiveTutor(subject.title),
         },
       ]
     );
@@ -263,6 +382,8 @@ export default function SlickkDashboardScreen() {
       : serverStatus === 'offline'
         ? '#FF8E8E'
         : '#FFD36E';
+  const studentFirstName =
+    studentProfile?.studentName.trim().split(/\s+/)[0] ?? '';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -285,12 +406,29 @@ export default function SlickkDashboardScreen() {
             <Text
               style={styles.smallGreeting}
             >
-              WELCOME TO
+              {studentProfile
+                ? 'WELCOME BACK TO SLICKK'
+                : 'WELCOME TO'}
             </Text>
 
-            <Text style={styles.brand}>
-              SLICKK
+            <Text
+              style={[
+                styles.brand,
+                studentProfile &&
+                  styles.studentGreeting,
+              ]}
+            >
+              {studentProfile
+                ? `Hi, ${studentFirstName}`
+                : 'SLICKK'}
             </Text>
+
+            {studentProfile ? (
+              <Text style={styles.profileContext}>
+                {studentProfile.grade} ·{' '}
+                {studentProfile.school.name}
+              </Text>
+            ) : null}
           </View>
 
           <Pressable
@@ -409,7 +547,7 @@ export default function SlickkDashboardScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Start live lesson"
-            onPress={openLiveTutor}
+            onPress={() => openLiveTutor()}
             style={({ pressed }) => [
               styles.liveButton,
               pressed && styles.buttonPressed,
@@ -460,7 +598,7 @@ export default function SlickkDashboardScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Open typed tutor"
-            onPress={openTypedTutor}
+            onPress={() => openTypedTutor()}
             style={({ pressed }) => [
               styles.typedButton,
               pressed && styles.pressed,
@@ -701,13 +839,15 @@ export default function SlickkDashboardScreen() {
             <Text
               style={styles.sectionTitle}
             >
-              Choose a subject
+              {studentProfile
+                ? `${studentProfile.grade} subjects`
+                : 'Choose a subject'}
             </Text>
           </View>
         </View>
 
         <View style={styles.subjectList}>
-          {SUBJECTS.map((subject) => (
+          {dashboardSubjects.map((subject) => (
             <Pressable
               key={subject.id}
               accessibilityRole="button"
@@ -898,6 +1038,20 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 3.2,
     marginTop: 3,
+  },
+
+  studentGreeting: {
+    color: '#F4FFFC',
+    fontSize: 30,
+    letterSpacing: -0.7,
+  },
+
+  profileContext: {
+    maxWidth: 260,
+    color: '#718096',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
   },
 
   profileButton: {

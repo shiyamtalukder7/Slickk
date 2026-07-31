@@ -1,10 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import {
+  router,
+  useLocalSearchParams,
+} from 'expo-router';
 import * as Speech from 'expo-speech';
 import {
   streamTutorResponse,
   TutorStreamError,
 } from '@/services/tutor-stream';
+import {
+  LOCAL_STUDENT_ID,
+  loadStudentProfile,
+  type StudentEducationProfile,
+} from '@/services/student-profile';
 import {
     ExpoSpeechRecognitionModule,
     useSpeechRecognitionEvent,
@@ -213,6 +221,18 @@ function liveStateLabel(state: LiveState) {
 }
 
 export default function LiveTutorScreen() {
+  const { subject: requestedSubject } =
+    useLocalSearchParams<{ subject?: string }>();
+
+  const selectedSubject =
+    typeof requestedSubject === 'string' &&
+    requestedSubject.trim()
+      ? requestedSubject.trim()
+      : 'General Studies';
+
+  const [studentProfile, setStudentProfile] =
+    useState<StudentEducationProfile | null>(null);
+
   const [messages, setMessages] =
     useState<Message[]>(STARTER_MESSAGES);
 
@@ -233,6 +253,30 @@ export default function LiveTutorScreen() {
 
   const [recognitionLanguage, setRecognitionLanguage] =
     useState<'en-US' | 'bn-BD'>('en-US');
+
+  useEffect(() => {
+    let active = true;
+
+    loadStudentProfile()
+      .then((profile) => {
+        if (!active) {
+          return;
+        }
+
+        setStudentProfile(profile);
+
+        if (profile?.teachingLanguage === 'bangla') {
+          setRecognitionLanguage('bn-BD');
+        }
+      })
+      .catch(() => {
+        // Keep the live tutor usable with safe defaults.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [speechRate, setSpeechRate] =
     useState(0.82);
@@ -816,16 +860,24 @@ export default function LiveTutorScreen() {
       const completed = await streamTutorResponse(
         {
           message: cleanText,
-          studentName: 'Student',
-          studentId: 'local-student',
+          studentName:
+            studentProfile?.studentName ?? 'Student',
+          studentId: LOCAL_STUDENT_ID,
           conversationId:
             conversationIdRef.current,
-          grade: 'Grade 7–8',
+          grade:
+            studentProfile?.grade ?? 'Class 7',
           language:
-            recognitionLanguage ===
-            'bn-BD'
-              ? 'Bengali or Banglish'
-              : 'English or Banglish',
+            recognitionLanguage === 'bn-BD'
+              ? 'bangla'
+              : studentProfile?.teachingLanguage ??
+                'english',
+          curriculum:
+            studentProfile?.curriculumTrack ??
+            'nctb-english-version',
+          subject: selectedSubject,
+          topic: cleanText.slice(0, 120),
+          school: studentProfile?.school.name,
           channel: 'live',
           mode: 'adaptive',
           recentMessages,
@@ -921,7 +973,7 @@ export default function LiveTutorScreen() {
           ? 'The local tutor took too long to answer. Please ask a shorter question.'
           : error instanceof TutorStreamError
             ? error.message
-            : 'I could not connect to the Slickk intelligence server. Make sure Ollama and the Slickk server are running.';
+            : 'I could not connect to Slickk LLM. Make sure the Slickk server and its configured local runtime are running.';
 
         updateMessage(
           tutorMessageId,
