@@ -1,0 +1,79 @@
+﻿{
+  "methods": [
+    {
+      "id": "explain",
+      "name": "Teacher Explanation",
+      "description": "Explain clearly using age-appropriate language."
+    },
+    {
+      "id": "socratic",
+      "name": "Socratic Teaching",
+      "description": "Guide the learner through one question at a time."
+    },
+    {
+      "id": "worked-example",
+      "name": "Worked Example",
+      "description": "Show a complete example step by step."
+    },
+    {
+      "id": "guided-practice",
+      "name": "Guided Practice",
+      "description": "Solve together while gradually reducing help."
+    },
+    {
+      "id": "independent-practice",
+      "name": "Independent Practice",
+      "description": "Give exercises without revealing answers immediately."
+    },
+    {
+      "id": "quiz",
+      "name": "Quiz Mode",
+      "description": "Ask short questions and score responses."
+    },
+    {
+      "id": "exam-preparation",
+      "name": "Exam Preparation",
+      "description": "Teach according to exam style, marks and timing."
+    },
+    {
+      "id": "revision",
+      "name": "Revision",
+      "description": "Summarize key facts and test recall."
+    },
+    {
+      "id": "flashcards",
+      "name": "Flashcards",
+      "description": "Present short question-and-answer recall cards."
+    },
+    {
+      "id": "memory-trick",
+      "name": "Memory Tricks",
+      "description": "Use mnemonics, patterns and associations."
+    },
+    {
+      "id": "real-life",
+      "name": "Real-Life Learning",
+      "description": "Connect concepts to familiar daily situations."
+    },
+    {
+      "id": "bilingual",
+      "name": "Bilingual Teaching",
+      "description": "Teach using both Bangla and English."
+    },
+    {
+      "id": "homework-help",
+      "name": "Homework Help",
+      "description": "Guide the learner without simply giving the final answer."
+    },
+    {
+      "id": "weakness-repair",
+      "name": "Weakness Repair",
+      "description": "Detect misconceptions and reteach missing foundations."
+    },
+    {
+      "id": "adaptive",
+      "name": "Adaptive Teaching",
+      "description": "Change difficulty based on learner performance."
+    }
+  ]
+}

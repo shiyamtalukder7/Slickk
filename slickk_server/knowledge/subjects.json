@@ -1,0 +1,26 @@
+﻿{
+  "subjects": [
+    {"id": "bangla", "name": "Bangla", "category": "language"},
+    {"id": "english", "name": "English", "category": "language"},
+    {"id": "mathematics", "name": "Mathematics", "category": "mathematics"},
+    {"id": "higher-mathematics", "name": "Higher Mathematics", "category": "mathematics"},
+    {"id": "general-science", "name": "General Science", "category": "science"},
+    {"id": "physics", "name": "Physics", "category": "science"},
+    {"id": "chemistry", "name": "Chemistry", "category": "science"},
+    {"id": "biology", "name": "Biology", "category": "science"},
+    {"id": "ict", "name": "ICT", "category": "technology"},
+    {"id": "computer-science", "name": "Computer Science", "category": "technology"},
+    {"id": "bangladesh-global-studies", "name": "Bangladesh and Global Studies", "category": "social-science"},
+    {"id": "history", "name": "History", "category": "social-science"},
+    {"id": "geography", "name": "Geography", "category": "social-science"},
+    {"id": "economics", "name": "Economics", "category": "business"},
+    {"id": "accounting", "name": "Accounting", "category": "business"},
+    {"id": "finance-banking", "name": "Finance and Banking", "category": "business"},
+    {"id": "business-entrepreneurship", "name": "Business Entrepreneurship", "category": "business"},
+    {"id": "religion", "name": "Religion and Moral Education", "category": "religion"},
+    {"id": "agriculture", "name": "Agricultural Studies", "category": "vocational"},
+    {"id": "home-science", "name": "Home Science", "category": "vocational"},
+    {"id": "arts-crafts", "name": "Arts and Crafts", "category": "creative"},
+    {"id": "physical-education", "name": "Physical Education and Health", "category": "health"}
+  ]
+}

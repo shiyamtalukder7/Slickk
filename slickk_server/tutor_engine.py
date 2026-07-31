@@ -7,6 +7,7 @@ from slickk_server.knowledge_base import (
     format_grounding,
     retrieve_knowledge,
 )
+from slickk_server.teaching_router import select_teaching_method
 
 
 TEACHING_MODES = {
@@ -264,7 +265,7 @@ def select_tutor_response(
 
 def build_tutor_prompt(
     payload: dict[str, Any],
-) -> tuple[str, dict[str, str]]:
+) -> tuple[str, dict[str, Any]]:
     """Build a structured educational prompt from a tutor request."""
 
     if not isinstance(payload, dict):
@@ -313,21 +314,6 @@ def build_tutor_prompt(
         "Current lesson",
     )
 
-    mode = optional_text(
-        payload.get("teaching_mode"),
-        "socratic",
-    ).lower()
-
-    if mode not in TEACHING_MODES:
-        raise RuntimeManagerError(
-            code="invalid_teaching_mode",
-            message=(
-                "teaching_mode must be one of: "
-                + ", ".join(sorted(TEACHING_MODES))
-            ),
-            status_code=400,
-        )
-
     messages = normalize_messages(
         payload.get("messages")
     )
@@ -340,6 +326,75 @@ def build_tutor_prompt(
         ),
         "",
     )
+
+    requested_method = payload.get(
+        "teaching_method",
+        payload.get("teaching_mode"),
+    )
+
+    if requested_method is not None and not isinstance(
+        requested_method,
+        str,
+    ):
+        raise RuntimeManagerError(
+            code="invalid_teaching_method",
+            message="teaching_method must be text.",
+            status_code=400,
+        )
+
+    requested_difficulty = payload.get("difficulty", "")
+
+    if not isinstance(requested_difficulty, str):
+        raise RuntimeManagerError(
+            code="invalid_difficulty",
+            message="difficulty must be text.",
+            status_code=400,
+        )
+
+    performance = payload.get("performance")
+
+    if performance is not None:
+        if (
+            isinstance(performance, bool)
+            or not isinstance(performance, (int, float))
+            or not 0 <= float(performance) <= 1
+        ):
+            raise RuntimeManagerError(
+                code="invalid_performance",
+                message="performance must be a number from 0 to 1.",
+                status_code=400,
+            )
+
+        performance = float(performance)
+
+    previous_attempt_correct = payload.get(
+        "previous_attempt_correct"
+    )
+
+    if (
+        previous_attempt_correct is not None
+        and not isinstance(previous_attempt_correct, bool)
+    ):
+        raise RuntimeManagerError(
+            code="invalid_previous_attempt",
+            message=(
+                "previous_attempt_correct must be true, false or null."
+            ),
+            status_code=400,
+        )
+
+    teaching_decision = select_teaching_method(
+        latest_user_message,
+        requested_method=requested_method,
+        language=language,
+        level=grade,
+        difficulty=requested_difficulty,
+        performance=performance,
+        previous_attempt_correct=previous_attempt_correct,
+    )
+
+    mode = teaching_decision.method
+    language = teaching_decision.language
 
     knowledge_documents = retrieve_knowledge(
         subject=subject,
@@ -408,8 +463,13 @@ TEACHING BEHAVIOUR
 16. For language subjects, explain grammar and vocabulary simply.
 17. Never shame the student for an incorrect answer.
 
-MODE INSTRUCTION
-{mode_instructions(mode)}
+SELECTED TEACHING STRATEGY
+Method: {teaching_decision.method}
+Difficulty: {teaching_decision.difficulty}
+Reason: {teaching_decision.reason}
+
+METHOD INSTRUCTION
+{teaching_decision.instruction}
 
 Continue the following lesson naturally.
 """.strip()
@@ -428,6 +488,9 @@ Continue the following lesson naturally.
         "subject": subject,
         "topic": topic,
         "teaching_mode": mode,
+        "teaching_method": teaching_decision.method,
+        "teaching_reason": teaching_decision.reason,
+        "difficulty": teaching_decision.difficulty,
         "grounded": bool(knowledge_documents),
         "_verified_response": build_verified_response(
             knowledge_documents,

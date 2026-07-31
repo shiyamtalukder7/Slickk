@@ -1,0 +1,175 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Slickk Universal Lesson",
+  "type": "object",
+  "required": [
+    "id",
+    "curriculum",
+    "level",
+    "subject",
+    "chapter",
+    "topic",
+    "language",
+    "learning_objectives",
+    "verified_facts",
+    "teaching"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "curriculum": {
+      "type": "string"
+    },
+    "level": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "chapter": {
+      "type": "string"
+    },
+    "topic": {
+      "type": "string"
+    },
+    "language": {
+      "type": "string"
+    },
+    "keywords": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "learning_objectives": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "verified_facts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "common_mistakes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "examples": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "teaching": {
+      "type": "object",
+      "properties": {
+        "simple_explanation": {
+          "type": "string"
+        },
+        "detailed_explanation": {
+          "type": "string"
+        },
+        "socratic_questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "real_life_examples": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "memory_tricks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "practice": {
+      "type": "object",
+      "properties": {
+        "short_questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mcq": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "question",
+              "options",
+              "answer"
+            ],
+            "properties": {
+              "question": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "answer": {
+                "type": "string"
+              },
+              "explanation": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "creative_questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "assessment": {
+      "type": "object",
+      "properties": {
+        "difficulty": {
+          "type": "string",
+          "enum": [
+            "beginner",
+            "easy",
+            "medium",
+            "hard",
+            "advanced"
+          ]
+        },
+        "estimated_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "prerequisites": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
