@@ -42,6 +42,13 @@ function normalizeMaxNewTokens(value) {
   return Math.min(Math.max(value, 1), 256);
 }
 
+const GENERATION_OPTIONS = {
+  do_sample: false,
+  repetition_penalty: 1.18,
+  no_repeat_ngram_size: 3,
+  return_full_text: false,
+};
+
 async function main() {
   const generator = await pipeline(
     "text-generation",
@@ -146,8 +153,7 @@ async function main() {
 
         await generator(messages, {
           max_new_tokens: maxNewTokens,
-          do_sample: false,
-          return_full_text: false,
+          ...GENERATION_OPTIONS,
           streamer,
         });
 
@@ -162,8 +168,7 @@ async function main() {
       } else {
         const output = await generator(messages, {
           max_new_tokens: maxNewTokens,
-          do_sample: false,
-          return_full_text: false,
+          ...GENERATION_OPTIONS,
         });
 
         send({

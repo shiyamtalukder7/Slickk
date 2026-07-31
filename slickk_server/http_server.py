@@ -10,7 +10,10 @@ from urllib.parse import urlparse
 
 from slickk_models import ModelRegistry
 from slickk_runtime.manager import RuntimeManager, RuntimeManagerError
-from slickk_server.tutor_engine import build_tutor_prompt
+from slickk_server.tutor_engine import (
+    build_tutor_prompt,
+    select_tutor_response,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -495,6 +498,18 @@ class SlickkRequestHandler(BaseHTTPRequestHandler):
             max_new_tokens,
         )
 
+        response_text, fallback_used = select_tutor_response(
+            result.get("text"),
+            tutor_metadata,
+        )
+
+        tutor_metadata["response_mode"] = (
+            "verified_fallback"
+            if fallback_used
+            else "local_model"
+        )
+        tutor_metadata["model_answer_rejected"] = fallback_used
+
         self.send_json(
             200,
             {
@@ -504,7 +519,7 @@ class SlickkRequestHandler(BaseHTTPRequestHandler):
                 "model": model.strip(),
                 "message": {
                     "role": "assistant",
-                    "content": result["text"],
+                    "content": response_text,
                 },
                 "tutor": tutor_metadata,
                 "backend": result.get("backend"),
