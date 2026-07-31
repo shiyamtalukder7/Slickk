@@ -494,6 +494,7 @@ def build_tutor_prompt(
         grade=grade,
         curriculum=curriculum,
         query=latest_user_message,
+        language=language,
     )
 
     grounding = format_grounding(

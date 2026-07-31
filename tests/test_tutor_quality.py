@@ -1,6 +1,9 @@
 import unittest
 
-from slickk_server.knowledge_base import retrieve_knowledge
+from slickk_server.knowledge_base import (
+    resolve_curriculum_id,
+    retrieve_knowledge,
+)
 from slickk_server.tutor_engine import (
     model_response_is_low_quality,
     select_tutor_response,
@@ -13,7 +16,8 @@ class RespirationQualityTests(unittest.TestCase):
             subject="Biology",
             topic="Respiration",
             grade="Class 7",
-            curriculum="NCTB",
+            curriculum="nctb-english-version",
+            language="english",
             query="Explain respiration.",
         )
 
@@ -24,7 +28,7 @@ class RespirationQualityTests(unittest.TestCase):
         )
         self.assertEqual(
             documents[0].get("curriculum"),
-            "NCTB",
+            "nctb-english-version",
         )
         self.assertEqual(
             documents[0].get("grade"),
@@ -129,6 +133,49 @@ class RespirationQualityTests(unittest.TestCase):
 
         self.assertFalse(used_fallback)
         self.assertEqual(response, model_answer)
+
+
+    def test_mobile_curriculum_aliases_are_resolved(self) -> None:
+        self.assertEqual(
+            resolve_curriculum_id("nctb-bangla-version"),
+            "nctb-bangla",
+        )
+        self.assertEqual(
+            resolve_curriculum_id("cambridge-international"),
+            "cambridge",
+        )
+        self.assertEqual(
+            resolve_curriculum_id(
+                "pearson-edexcel-international"
+            ),
+            "edexcel",
+        )
+
+    def test_bangla_curriculum_cannot_use_english_lesson(
+        self,
+    ) -> None:
+        documents = retrieve_knowledge(
+            subject="Biology",
+            topic="Respiration",
+            grade="Class 7",
+            curriculum="nctb-bangla-version",
+            language="bangla",
+            query="????? ???",
+        )
+
+        self.assertEqual(documents, [])
+
+    def test_cambridge_cannot_use_nctb_lesson(self) -> None:
+        documents = retrieve_knowledge(
+            subject="Biology",
+            topic="Respiration",
+            grade="Class 7",
+            curriculum="cambridge-international",
+            language="english",
+            query="Explain respiration.",
+        )
+
+        self.assertEqual(documents, [])
 
 
 if __name__ == "__main__":

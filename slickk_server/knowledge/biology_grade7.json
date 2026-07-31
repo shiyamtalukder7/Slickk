@@ -6,7 +6,7 @@
       "subject": "Biology",
       "topic": "Respiration",
       "grade": "Class 7",
-      "curriculum": "NCTB",
+      "curriculum": "nctb-english-version",
       "language": "English",
       "source_type": "Slickk verified lesson",
       "keywords": [
@@ -31,7 +31,8 @@
         "Respiration is not simply breathing.",
         "The lungs do not create energy from oxygen.",
         "Carbon dioxide is produced during aerobic respiration; it is not used as the main reactant."
-      ]
+      ],
+      "medium": "English Version"
     }
   ]
 }

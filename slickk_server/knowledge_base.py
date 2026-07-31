@@ -2,6 +2,7 @@
 
 import json
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,104 @@ def normalize(value: str) -> str:
     """Normalize text for lightweight matching."""
 
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+CURRICULUM_CATALOG_PATH = (
+    KNOWLEDGE_DIR / "curricula" / "catalog.json"
+)
+
+CURRICULUM_ALIASES = {
+    "nctb bangla version": "nctb-bangla",
+    "nctb bangla medium": "nctb-bangla",
+    "nctb english version": "nctb-english-version",
+    "cambridge international": "cambridge",
+    "pearson edexcel": "edexcel",
+    "pearson edexcel international": "edexcel",
+}
+
+
+@lru_cache(maxsize=1)
+def load_curriculum_catalog() -> list[dict[str, Any]]:
+    """Load registered curriculum definitions."""
+
+    try:
+        with CURRICULUM_CATALOG_PATH.open(
+            "r",
+            encoding="utf-8-sig",
+        ) as file:
+            payload = json.load(file)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return []
+
+    curricula = payload.get("curricula")
+
+    if not isinstance(curricula, list):
+        return []
+
+    return [
+        item
+        for item in curricula
+        if isinstance(item, dict)
+        and isinstance(item.get("id"), str)
+    ]
+
+
+def resolve_curriculum_id(value: str) -> str:
+    """Resolve curriculum names and mobile aliases to registry IDs."""
+
+    normalized = normalize(str(value))
+
+    if not normalized:
+        return ""
+
+    alias = CURRICULUM_ALIASES.get(normalized)
+
+    if alias:
+        return alias
+
+    for curriculum in load_curriculum_catalog():
+        curriculum_id = str(curriculum.get("id", ""))
+        curriculum_name = str(curriculum.get("name", ""))
+
+        if normalized in {
+            normalize(curriculum_id),
+            normalize(curriculum_name),
+        }:
+            return curriculum_id
+
+    return normalized.replace(" ", "-")
+
+
+def normalize_language(value: str) -> str:
+    """Normalize supported teaching and lesson languages."""
+
+    normalized = normalize(str(value))
+
+    if normalized in {
+        "english",
+        "en",
+        "en us",
+        "english or banglish",
+    }:
+        return "english"
+
+    if normalized in {
+        "bangla",
+        "bengali",
+        "bn",
+        "bn bd",
+        "bengali or banglish",
+    }:
+        return "bangla"
+
+    if normalized in {
+        "bilingual",
+        "banglish",
+        "english bangla",
+    }:
+        return "multilingual"
+
+    return normalized
 
 
 def load_documents() -> list[dict[str, Any]]:
@@ -66,9 +165,15 @@ def retrieve_knowledge(
     grade: str,
     curriculum: str,
     query: str,
+    language: str = "",
     limit: int = 3,
 ) -> list[dict[str, Any]]:
     """Return the best matching educational documents."""
+
+    requested_curriculum_id = resolve_curriculum_id(
+        curriculum
+    )
+    requested_language = normalize_language(language)
 
     search_text = normalize(
         " ".join(
@@ -86,6 +191,31 @@ def retrieve_knowledge(
     scored: list[tuple[int, dict[str, Any]]] = []
 
     for document in load_documents():
+        document_curriculum_id = resolve_curriculum_id(
+            str(document.get("curriculum", ""))
+        )
+
+        # Never mix lessons from different curriculum tracks.
+        if (
+            requested_curriculum_id
+            and document_curriculum_id
+            != requested_curriculum_id
+        ):
+            continue
+
+        document_language = normalize_language(
+            str(document.get("language", ""))
+        )
+
+        # English and Bangla lesson content remain isolated.
+        # Bilingual and Banglish requests may use either language.
+        if (
+            requested_language in {"english", "bangla"}
+            and document_language
+            and document_language != requested_language
+        ):
+            continue
+
         document_text = normalize(
             " ".join(
                 [
@@ -128,8 +258,10 @@ def retrieve_knowledge(
         ):
             score += 4
 
-        if normalize(curriculum) == normalize(
-            str(document.get("curriculum", ""))
+        if (
+            requested_curriculum_id
+            and requested_curriculum_id
+            == document_curriculum_id
         ):
             score += 3
 
