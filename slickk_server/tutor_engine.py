@@ -1,12 +1,15 @@
 """Educational prompt engine for Slickk Tutor."""
 
+import re
 from typing import Any
 
 from slickk_runtime.manager import RuntimeManagerError
+
 from slickk_server.knowledge_base import (
     format_grounding,
     retrieve_knowledge,
 )
+
 from slickk_server.teaching_router import select_teaching_method
 
 

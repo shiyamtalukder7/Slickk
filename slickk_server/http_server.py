@@ -720,6 +720,7 @@ class SlickkRequestHandler(BaseHTTPRequestHandler):
 def serve(
     host: str = "127.0.0.1",
     port: int = 11435,
+    model_name: str | None = "slickk-edu-local",
 ) -> None:
     """Start the Slickk local HTTP server."""
 
@@ -737,6 +738,27 @@ def serve(
     )
     print("Streaming: enabled")
     print("Press Ctrl+C to stop.")
+
+    if model_name:
+        print(f"Loading model: {model_name}")
+
+        try:
+            state = RUNTIME_MANAGER.load_model(model_name)
+            active_model = state.get("active_model") or {}
+
+            print(
+                "Model ready: "
+                f"{active_model.get('name', model_name)}"
+            )
+        except RuntimeManagerError as error:
+            print(
+                "[Slickk] Automatic model load failed "
+                f"({error.code}): {error.message}"
+            )
+            print(
+                "[Slickk] Server will continue. The model can "
+                "still be loaded through POST /v1/models/load."
+            )
 
     try:
         server.serve_forever()

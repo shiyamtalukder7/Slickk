@@ -67,6 +67,12 @@ def main() -> None:
         help="Server port",
     )
 
+    serve_parser.add_argument(
+        "--model",
+        default="slickk-edu-local",
+        help="Registered model to load automatically",
+    )
+
     arguments = parser.parse_args()
 
     if arguments.command == "diagnose":
@@ -78,7 +84,11 @@ def main() -> None:
         return
 
     if arguments.command == "serve":
-        serve(arguments.host, arguments.port)
+        serve(
+            arguments.host,
+            arguments.port,
+            arguments.model,
+        )
         return
 
     parser.print_help()
