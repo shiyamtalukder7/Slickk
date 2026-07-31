@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from slickk_models import ModelRegistry
 from slickk_runtime.manager import RuntimeManager, RuntimeManagerError
+from slickk_server.tutor_engine import build_tutor_prompt
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -327,6 +328,10 @@ class SlickkRequestHandler(BaseHTTPRequestHandler):
                 self.handle_chat_completions()
                 return
 
+            if path == "/v1/tutor/chat":
+                self.handle_tutor_chat()
+                return
+
         except RuntimeManagerError as error:
             self.send_runtime_error(error)
             return
@@ -445,6 +450,67 @@ class SlickkRequestHandler(BaseHTTPRequestHandler):
             self.send_sse_data("[DONE]")
 
         self.close_connection = True
+
+    def handle_tutor_chat(self) -> None:
+        """Handle structured educational tutor requests."""
+
+        payload = self.read_json()
+        prompt, tutor_metadata = build_tutor_prompt(payload)
+
+        stream = payload.get("stream", False)
+        max_new_tokens = payload.get(
+            "max_tokens",
+            payload.get("max_new_tokens", 160),
+        )
+
+        if not isinstance(stream, bool):
+            raise RuntimeManagerError(
+                code="invalid_stream",
+                message="stream must be true or false.",
+                status_code=400,
+            )
+
+        model = payload.get(
+            "model",
+            "slickk-edu-local",
+        )
+
+        if not isinstance(model, str) or not model.strip():
+            raise RuntimeManagerError(
+                code="invalid_model",
+                message="model must be a non-empty string.",
+                status_code=400,
+            )
+
+        if stream:
+            self.handle_chat_stream(
+                prompt=prompt,
+                model=model.strip(),
+                max_new_tokens=max_new_tokens,
+            )
+            return
+
+        result = RUNTIME_MANAGER.generate(
+            prompt,
+            max_new_tokens,
+        )
+
+        self.send_json(
+            200,
+            {
+                "id": f"tutor-{uuid.uuid4().hex}",
+                "object": "slickk.tutor.response",
+                "created": int(time.time()),
+                "model": model.strip(),
+                "message": {
+                    "role": "assistant",
+                    "content": result["text"],
+                },
+                "tutor": tutor_metadata,
+                "backend": result.get("backend"),
+                "persistent_worker": True,
+            },
+        )
 
     def handle_chat_completions(self) -> None:
         """Handle OpenAI-style chat completion requests."""
