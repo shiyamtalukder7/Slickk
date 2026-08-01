@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 import argparse
+import gzip
+import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -9,7 +11,11 @@ from typing import Any
 
 from slickk_server.textbook_ingest import (
     TextbookIngestError,
+    canonicalize_metadata,
+    extract_source_pages,
+    file_sha256,
     ingest_textbook,
+    ocr_language_for_metadata,
 )
 
 
@@ -24,6 +30,10 @@ COMPLETED_IMPORT_STATUSES = {
     "approved",
     "promoted",
 }
+
+EXTRACTION_CACHE_FORMAT = (
+    "slickk-textbook-extraction-cache-v1"
+)
 
 
 class TextbookBatchError(RuntimeError):
@@ -161,6 +171,230 @@ def completed_staging_exists(
     return staging_path.is_file()
 
 
+def extraction_cache_path(
+    *,
+    project_root: Path,
+    source_identity: str,
+    source_sha256: str,
+    ocr_language: str,
+) -> Path:
+    """Build a stable cache path for extracted source pages."""
+
+    cache_material = "\0".join(
+        (
+            source_identity,
+            source_sha256,
+            ocr_language,
+        )
+    ).encode("utf-8")
+
+    cache_key = hashlib.sha256(
+        cache_material
+    ).hexdigest()
+
+    return (
+        project_root
+        / "slickk_server"
+        / "knowledge"
+        / "_imports"
+        / "_extraction_cache"
+        / f"{cache_key}.json.gz"
+    )
+
+
+def load_cached_pages(
+    cache_path: Path,
+    *,
+    source_identity: str,
+    source_sha256: str,
+    ocr_language: str,
+) -> list[dict[str, Any]] | None:
+    """Load cached pages only when every cache key matches."""
+
+    if not cache_path.is_file():
+        return None
+
+    try:
+        with gzip.open(
+            cache_path,
+            "rt",
+            encoding="utf-8",
+        ) as cache_file:
+            payload = json.load(cache_file)
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+    ):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    if payload.get("format") != EXTRACTION_CACHE_FORMAT:
+        return None
+
+    expected = {
+        "source_identity": source_identity,
+        "source_sha256": source_sha256,
+        "ocr_language": ocr_language,
+    }
+
+    for name, value in expected.items():
+        if payload.get(name) != value:
+            return None
+
+    raw_pages = payload.get("pages")
+
+    if not isinstance(raw_pages, list):
+        return None
+
+    pages: list[dict[str, Any]] = []
+
+    for raw_page in raw_pages:
+        if not isinstance(raw_page, dict):
+            return None
+
+        try:
+            pages.append(
+                {
+                    "page": int(raw_page["page"]),
+                    "text": str(
+                        raw_page.get("text", "")
+                    ),
+                }
+            )
+        except (
+            KeyError,
+            TypeError,
+            ValueError,
+        ):
+            return None
+
+    return pages
+
+
+def save_cached_pages(
+    cache_path: Path,
+    *,
+    source_identity: str,
+    source_sha256: str,
+    ocr_language: str,
+    pages: list[dict[str, Any]],
+) -> None:
+    """Save extracted pages atomically in compressed JSON."""
+
+    cache_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    payload = {
+        "format": EXTRACTION_CACHE_FORMAT,
+        "source_identity": source_identity,
+        "source_sha256": source_sha256,
+        "ocr_language": ocr_language,
+        "pages": pages,
+    }
+
+    temporary_path = cache_path.with_name(
+        cache_path.name + ".tmp"
+    )
+
+    with gzip.open(
+        temporary_path,
+        "wt",
+        encoding="utf-8",
+    ) as cache_file:
+        json.dump(
+            payload,
+            cache_file,
+            ensure_ascii=False,
+        )
+
+    temporary_path.replace(cache_path)
+
+
+def cached_source_pages(
+    *,
+    book: dict[str, Any],
+    source_path: Path,
+    required_fields: dict[str, Any],
+    project_root: Path,
+) -> tuple[list[dict[str, Any]], str]:
+    """Load cached extraction or extract the source once."""
+
+    metadata = canonicalize_metadata(
+        curriculum=str(
+            required_fields["curriculum"]
+        ),
+        level=str(required_fields["level"]),
+        subject=str(required_fields["subject"]),
+        language=str(required_fields["language"]),
+    )
+
+    ocr_language = ocr_language_for_metadata(
+        subject=metadata["subject"],
+        language=metadata["language"],
+    )
+
+    source_sha256 = file_sha256(source_path)
+
+    source_identity = str(
+        book.get("source_file_id")
+        or source_path.resolve()
+    ).strip()
+
+    cache_path = extraction_cache_path(
+        project_root=project_root,
+        source_identity=source_identity,
+        source_sha256=source_sha256,
+        ocr_language=ocr_language,
+    )
+
+    cached_pages = load_cached_pages(
+        cache_path,
+        source_identity=source_identity,
+        source_sha256=source_sha256,
+        ocr_language=ocr_language,
+    )
+
+    if cached_pages is not None:
+        print(
+            "Extraction cache hit: "
+            f"{source_path.name}",
+            flush=True,
+        )
+        return cached_pages, source_sha256
+
+    print(
+        "Extraction cache miss: "
+        f"{source_path.name}",
+        flush=True,
+    )
+
+    pages = extract_source_pages(
+        source_path,
+        ocr_language=ocr_language,
+    )
+
+    save_cached_pages(
+        cache_path,
+        source_identity=source_identity,
+        source_sha256=source_sha256,
+        ocr_language=ocr_language,
+        pages=pages,
+    )
+
+    print(
+        "Extraction cache saved: "
+        f"{cache_path.name}",
+        flush=True,
+    )
+
+    return pages, source_sha256
+
+
 def run_batch(
     catalog_file: str | Path = DEFAULT_CATALOG_PATH,
     *,
@@ -291,6 +525,16 @@ def run_batch(
         save_catalog(catalog_path, catalog)
 
         try:
+            (
+                extracted_pages,
+                source_fingerprint,
+            ) = cached_source_pages(
+                book=book,
+                source_path=source_path,
+                required_fields=required_fields,
+                project_root=project_root,
+            )
+
             output_path, _ = ingest_textbook(
                 source_path,
                 curriculum=str(
@@ -308,6 +552,8 @@ def run_batch(
                 title=str(
                     required_fields["title"]
                 ),
+                extracted_pages=extracted_pages,
+                source_fingerprint=source_fingerprint,
             )
         except (
             TextbookIngestError,

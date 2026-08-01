@@ -504,6 +504,8 @@ def ingest_textbook(
     output_directory: str | Path | None = None,
     max_chars: int = 2400,
     overlap_chars: int = 200,
+    extracted_pages: list[dict[str, Any]] | None = None,
+    source_fingerprint: str | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Extract a textbook into a non-production review package."""
 
@@ -531,11 +533,35 @@ def ingest_textbook(
         language=metadata["language"],
     )
 
-    pages = extract_source_pages(
-        source_path,
-        ocr_language=ocr_language,
-    )
-    fingerprint = file_sha256(source_path)
+    if extracted_pages is None:
+        pages = extract_source_pages(
+            source_path,
+            ocr_language=ocr_language,
+        )
+    else:
+        try:
+            pages = [
+                {
+                    "page": int(page["page"]),
+                    "text": str(page.get("text", "")),
+                }
+                for page in extracted_pages
+            ]
+        except (
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as error:
+            raise TextbookIngestError(
+                "Cached extraction pages are invalid."
+            ) from error
+
+    fingerprint = str(
+        source_fingerprint or ""
+    ).strip()
+
+    if not fingerprint:
+        fingerprint = file_sha256(source_path)
 
     chunks = build_staging_chunks(
         pages,
@@ -573,6 +599,9 @@ def ingest_textbook(
                 for page in pages
             ),
             "ocr_language": ocr_language,
+            "extraction_reused": (
+                extracted_pages is not None
+            ),
         },
         "metadata": {
             **metadata,
