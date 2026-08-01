@@ -54,3 +54,36 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Local textbook OCR setup
+
+Slickk can OCR scanned textbooks and stage the extracted content for human review.
+
+### Requirements
+
+- Python 3.11 or newer
+- Tesseract OCR for Windows
+- Python dependencies installed from `pyproject.toml`
+
+Install the Python project:
+
+    python -m venv .venv
+    .\.venv\Scripts\python.exe -m pip install -e .
+
+Install Tesseract:
+
+    winget install --id tesseract-ocr.tesseract -e --accept-source-agreements --accept-package-agreements
+
+Expected executable:
+
+    C:\Program Files\Tesseract-OCR\tesseract.exe
+
+Verify it:
+
+    & "C:\Program Files\Tesseract-OCR\tesseract.exe" --version
+
+Imported textbook OCR is stored under:
+
+    slickk_server/knowledge/_imports/
+
+OCR output remains `needs_human_review` with `production_knowledge` set to `false` until reviewed and promoted.

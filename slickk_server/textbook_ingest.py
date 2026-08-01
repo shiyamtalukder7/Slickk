@@ -4,12 +4,15 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from pypdf import PdfReader
+import fitz
+import pytesseract
+from PIL import Image
 
 from slickk_server.knowledge_base import (
     KNOWLEDGE_DIR,
@@ -73,7 +76,7 @@ def split_text(
     max_chars: int = 2400,
     overlap_chars: int = 200,
 ) -> list[str]:
-    """Split extracted text into reviewable overlapping chunks."""
+    """Split text without cutting through words."""
 
     if max_chars < 100:
         raise ValueError(
@@ -98,34 +101,39 @@ def split_text(
     text_length = len(normalized)
 
     while start < text_length:
-        end = min(
+        hard_end = min(
             start + max_chars,
             text_length,
         )
+        end = hard_end
 
-        if end < text_length:
-            candidate = normalized[start:end]
+        if hard_end < text_length:
+            window = normalized[start:hard_end]
             minimum_boundary = max_chars // 2
 
-            paragraph_boundary = candidate.rfind(
-                "\n\n",
-                minimum_boundary,
-            )
-            sentence_boundary = candidate.rfind(
-                ". ",
-                minimum_boundary,
+            boundary_patterns = (
+                r"\n{2,}",
+                r"(?<=[.!?])\s+",
+                r"\n+",
+                r"\s+",
             )
 
-            boundary = max(
-                paragraph_boundary,
-                sentence_boundary,
-            )
+            for boundary_pattern in boundary_patterns:
+                matches = list(
+                    re.finditer(
+                        boundary_pattern,
+                        window[minimum_boundary:],
+                    )
+                )
 
-            if boundary > 0:
-                if boundary == sentence_boundary:
-                    end = start + boundary + 1
-                else:
-                    end = start + boundary
+                if matches:
+                    match = matches[-1]
+                    end = (
+                        start
+                        + minimum_boundary
+                        + match.start()
+                    )
+                    break
 
         chunk = normalized[start:end].strip()
 
@@ -135,7 +143,34 @@ def split_text(
         if end >= text_length:
             break
 
-        next_start = end - overlap_chars
+        target_start = max(
+            start + 1,
+            end - overlap_chars,
+        )
+
+        preceding_space = max(
+            normalized.rfind(
+                " ",
+                start + 1,
+                target_start + 1,
+            ),
+            normalized.rfind(
+                "\n",
+                start + 1,
+                target_start + 1,
+            ),
+        )
+
+        if preceding_space >= start + 1:
+            next_start = preceding_space + 1
+        else:
+            next_start = target_start
+
+        while (
+            next_start < text_length
+            and normalized[next_start].isspace()
+        ):
+            next_start += 1
 
         if next_start <= start:
             next_start = end
@@ -145,10 +180,31 @@ def split_text(
     return chunks
 
 
+
+def configure_tesseract() -> str:
+    """Locate and configure the local Tesseract executable."""
+
+    candidates = [
+        shutil.which("tesseract"),
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ]
+
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            pytesseract.pytesseract.tesseract_cmd = candidate
+            return candidate
+
+    raise TextbookIngestError(
+        "Tesseract OCR was not found. Expected it at "
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    )
+
+
 def extract_source_pages(
     source_path: Path,
 ) -> list[dict[str, Any]]:
-    """Extract text per page from PDF, TXT or Markdown files."""
+    """Extract text from PDF, TXT or Markdown with OCR fallback."""
 
     suffix = source_path.suffix.lower()
 
@@ -160,31 +216,99 @@ def extract_source_pages(
 
     if suffix == ".pdf":
         try:
-            reader = PdfReader(str(source_path))
+            document = fitz.open(str(source_path))
         except Exception as error:
             raise TextbookIngestError(
                 f"Could not read PDF: {error}"
             ) from error
 
         pages: list[dict[str, Any]] = []
+        page_count = len(document)
+        ocr_configured = False
+        ocr_page_count = 0
+        native_page_count = 0
 
-        for page_number, page in enumerate(
-            reader.pages,
-            start=1,
-        ):
-            try:
-                extracted = page.extract_text() or ""
-            except Exception:
-                extracted = ""
+        try:
+            for page_number, page in enumerate(
+                document,
+                start=1,
+            ):
+                print(
+                    f"Processing page "
+                    f"{page_number}/{page_count}...",
+                    flush=True,
+                )
 
-            pages.append(
-                {
-                    "page": page_number,
-                    "text": normalize_extracted_text(
+                try:
+                    native_text = normalize_extracted_text(
+                        page.get_text("text") or ""
+                    )
+                except Exception:
+                    native_text = ""
+
+                if len(native_text) >= 80:
+                    extracted = native_text
+                    native_page_count += 1
+                else:
+                    if not ocr_configured:
+                        executable = configure_tesseract()
+                        print(
+                            f"OCR fallback enabled: {executable}",
+                            flush=True,
+                        )
+                        ocr_configured = True
+
+                    print(
+                        f"  OCR page "
+                        f"{page_number}/{page_count}...",
+                        flush=True,
+                    )
+
+                    try:
+                        pixmap = page.get_pixmap(
+                            dpi=200,
+                            alpha=False,
+                        )
+
+                        image = Image.frombytes(
+                            "RGB",
+                            (pixmap.width, pixmap.height),
+                            pixmap.samples,
+                        )
+
+                        extracted = (
+                            pytesseract.image_to_string(
+                                image,
+                                lang="eng",
+                                config="--oem 3 --psm 3",
+                            )
+                        )
+                    except Exception as error:
+                        raise TextbookIngestError(
+                            "OCR failed on PDF page "
+                            f"{page_number}: {error}"
+                        ) from error
+
+                    extracted = normalize_extracted_text(
                         extracted
-                    ),
-                }
-            )
+                    )
+                    ocr_page_count += 1
+
+                pages.append(
+                    {
+                        "page": page_number,
+                        "text": extracted,
+                    }
+                )
+        finally:
+            document.close()
+
+        print(
+            "PDF extraction complete: "
+            f"{native_page_count} native-text pages, "
+            f"{ocr_page_count} OCR pages.",
+            flush=True,
+        )
 
         return pages
 

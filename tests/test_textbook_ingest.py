@@ -30,6 +30,42 @@ class TextbookIngestTests(unittest.TestCase):
             )
         )
 
+    def test_split_text_preserves_whole_word_boundaries(self) -> None:
+        text = " ".join(
+            f"scienceword{index:03d}"
+            for index in range(120)
+        )
+        original_words = set(text.split())
+
+        chunks = split_text(
+            text,
+            max_chars=180,
+            overlap_chars=35,
+        )
+
+        self.assertGreater(len(chunks), 1)
+
+        for chunk in chunks:
+            chunk_words = chunk.split()
+
+            self.assertIn(
+                chunk_words[0],
+                original_words,
+            )
+            self.assertIn(
+                chunk_words[-1],
+                original_words,
+            )
+
+        for previous, current in zip(
+            chunks,
+            chunks[1:],
+        ):
+            self.assertTrue(
+                set(previous.split())
+                & set(current.split())
+            )
+
     def test_plain_text_is_staged_for_review(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
