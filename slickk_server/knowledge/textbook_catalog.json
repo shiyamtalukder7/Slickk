@@ -1,0 +1,1301 @@
+{
+  "format": "slickk-textbook-catalog-v1",
+  "catalog_version": 1,
+  "updated_at": "2026-08-01T18:08:53.785480+00:00",
+  "curriculum_registry": "curricula/catalog.json",
+  "subject_registry": "subjects.json",
+  "rules": {
+    "raw_ocr_is_production_knowledge": false,
+    "human_review_required_before_promotion": true,
+    "resume_completed_books": true,
+    "download_only_authorized_sources": true,
+    "train_on_raw_ocr": false
+  },
+  "curricula": [
+    {
+      "id": "nctb-bangla",
+      "name": "NCTB Bangla Medium",
+      "country": "Bangladesh",
+      "languages": [
+        "Bangla"
+      ],
+      "levels": [
+        "Class 1",
+        "Class 2",
+        "Class 3",
+        "Class 4",
+        "Class 5",
+        "Class 6",
+        "Class 7",
+        "Class 8",
+        "Class 9",
+        "Class 10",
+        "Class 11",
+        "Class 12"
+      ],
+      "acquisition_policy": "official-public-source-only"
+    },
+    {
+      "id": "nctb-english-version",
+      "name": "NCTB English Version",
+      "country": "Bangladesh",
+      "languages": [
+        "English",
+        "Bangla"
+      ],
+      "levels": [
+        "Class 1",
+        "Class 2",
+        "Class 3",
+        "Class 4",
+        "Class 5",
+        "Class 6",
+        "Class 7",
+        "Class 8",
+        "Class 9",
+        "Class 10",
+        "Class 11",
+        "Class 12"
+      ],
+      "acquisition_policy": "official-public-source-only"
+    },
+    {
+      "id": "cambridge",
+      "name": "Cambridge International",
+      "country": "Bangladesh",
+      "languages": [
+        "English",
+        "Bangla"
+      ],
+      "levels": [
+        "Primary",
+        "Lower Secondary",
+        "IGCSE",
+        "O Level",
+        "AS Level",
+        "A Level"
+      ],
+      "acquisition_policy": "user-provided-or-licensed-only"
+    },
+    {
+      "id": "edexcel",
+      "name": "Pearson Edexcel",
+      "country": "Bangladesh",
+      "languages": [
+        "English",
+        "Bangla"
+      ],
+      "levels": [
+        "Primary",
+        "Lower Secondary",
+        "International GCSE",
+        "O Level",
+        "International AS",
+        "International A Level"
+      ],
+      "acquisition_policy": "user-provided-or-licensed-only"
+    },
+    {
+      "id": "madrasa",
+      "name": "Bangladesh Madrasa Education Board",
+      "country": "Bangladesh",
+      "languages": [
+        "Bangla",
+        "Arabic",
+        "English"
+      ],
+      "levels": [
+        "Ebtedayee",
+        "Dakhil",
+        "Alim"
+      ],
+      "acquisition_policy": "official-public-source-only"
+    },
+    {
+      "id": "technical",
+      "name": "Bangladesh Technical Education Board",
+      "country": "Bangladesh",
+      "languages": [
+        "Bangla",
+        "English"
+      ],
+      "levels": [
+        "SSC Vocational",
+        "HSC Vocational",
+        "Diploma"
+      ],
+      "acquisition_policy": "official-public-source-only"
+    },
+    {
+      "id": "admission",
+      "name": "Bangladesh Admission Preparation",
+      "country": "Bangladesh",
+      "languages": [
+        "Bangla",
+        "English"
+      ],
+      "levels": [
+        "School Admission",
+        "College Admission",
+        "University Admission",
+        "Medical Admission",
+        "Engineering Admission"
+      ],
+      "acquisition_policy": "open-or-user-provided-only"
+    }
+  ],
+  "subjects": [
+    {
+      "id": "bangla",
+      "name": "Bangla",
+      "category": "language"
+    },
+    {
+      "id": "english",
+      "name": "English",
+      "category": "language"
+    },
+    {
+      "id": "mathematics",
+      "name": "Mathematics",
+      "category": "mathematics"
+    },
+    {
+      "id": "higher-mathematics",
+      "name": "Higher Mathematics",
+      "category": "mathematics"
+    },
+    {
+      "id": "general-science",
+      "name": "General Science",
+      "category": "science"
+    },
+    {
+      "id": "physics",
+      "name": "Physics",
+      "category": "science"
+    },
+    {
+      "id": "chemistry",
+      "name": "Chemistry",
+      "category": "science"
+    },
+    {
+      "id": "biology",
+      "name": "Biology",
+      "category": "science"
+    },
+    {
+      "id": "ict",
+      "name": "ICT",
+      "category": "technology"
+    },
+    {
+      "id": "computer-science",
+      "name": "Computer Science",
+      "category": "technology"
+    },
+    {
+      "id": "bangladesh-global-studies",
+      "name": "Bangladesh and Global Studies",
+      "category": "social-science"
+    },
+    {
+      "id": "history",
+      "name": "History",
+      "category": "social-science"
+    },
+    {
+      "id": "geography",
+      "name": "Geography",
+      "category": "social-science"
+    },
+    {
+      "id": "economics",
+      "name": "Economics",
+      "category": "business"
+    },
+    {
+      "id": "accounting",
+      "name": "Accounting",
+      "category": "business"
+    },
+    {
+      "id": "finance-banking",
+      "name": "Finance and Banking",
+      "category": "business"
+    },
+    {
+      "id": "business-entrepreneurship",
+      "name": "Business Entrepreneurship",
+      "category": "business"
+    },
+    {
+      "id": "religion",
+      "name": "Religion and Moral Education",
+      "category": "religion"
+    },
+    {
+      "id": "agriculture",
+      "name": "Agricultural Studies",
+      "category": "vocational"
+    },
+    {
+      "id": "home-science",
+      "name": "Home Science",
+      "category": "vocational"
+    },
+    {
+      "id": "arts-crafts",
+      "name": "Arts and Crafts",
+      "category": "creative"
+    },
+    {
+      "id": "physical-education",
+      "name": "Physical Education and Health",
+      "category": "health"
+    }
+  ],
+  "coverage_targets": [
+    {
+      "id": "nctb-bangla-class-1-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 1",
+      "level_id": "class-1",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-bangla-class-2-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 2",
+      "level_id": "class-2",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-bangla-class-3-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 3",
+      "level_id": "class-3",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-bangla-class-4-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 4",
+      "level_id": "class-4",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-bangla-class-5-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 5",
+      "level_id": "class-5",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-bangla-class-6-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 6",
+      "level_id": "class-6",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-bangla-class-7-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 7",
+      "level_id": "class-7",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-bangla-class-8-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 8",
+      "level_id": "class-8",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-bangla-class-9-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 9",
+      "level_id": "class-9",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-bangla-class-10-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 10",
+      "level_id": "class-10",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-bangla-class-11-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 11",
+      "level_id": "class-11",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-bangla-class-12-bangla",
+      "curriculum": "nctb-bangla",
+      "level": "Class 12",
+      "level_id": "class-12",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-1-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 1",
+      "level_id": "class-1",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-1-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 1",
+      "level_id": "class-1",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-2-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 2",
+      "level_id": "class-2",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-2-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 2",
+      "level_id": "class-2",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-3-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 3",
+      "level_id": "class-3",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-3-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 3",
+      "level_id": "class-3",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-4-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 4",
+      "level_id": "class-4",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-4-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 4",
+      "level_id": "class-4",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-5-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 5",
+      "level_id": "class-5",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-5-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 5",
+      "level_id": "class-5",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-6-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 6",
+      "level_id": "class-6",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-6-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 6",
+      "level_id": "class-6",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-7-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 7",
+      "level_id": "class-7",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-7-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 7",
+      "level_id": "class-7",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-8-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 8",
+      "level_id": "class-8",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-8-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 8",
+      "level_id": "class-8",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-9-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 9",
+      "level_id": "class-9",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-9-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 9",
+      "level_id": "class-9",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-10-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 10",
+      "level_id": "class-10",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-10-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 10",
+      "level_id": "class-10",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-11-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 11",
+      "level_id": "class-11",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-11-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 11",
+      "level_id": "class-11",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-12-english",
+      "curriculum": "nctb-english-version",
+      "level": "Class 12",
+      "level_id": "class-12",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "nctb-english-version-class-12-bangla",
+      "curriculum": "nctb-english-version",
+      "level": "Class 12",
+      "level_id": "class-12",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-primary-english",
+      "curriculum": "cambridge",
+      "level": "Primary",
+      "level_id": "primary",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-primary-bangla",
+      "curriculum": "cambridge",
+      "level": "Primary",
+      "level_id": "primary",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-lower-secondary-english",
+      "curriculum": "cambridge",
+      "level": "Lower Secondary",
+      "level_id": "lower-secondary",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-lower-secondary-bangla",
+      "curriculum": "cambridge",
+      "level": "Lower Secondary",
+      "level_id": "lower-secondary",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-igcse-english",
+      "curriculum": "cambridge",
+      "level": "IGCSE",
+      "level_id": "igcse",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-igcse-bangla",
+      "curriculum": "cambridge",
+      "level": "IGCSE",
+      "level_id": "igcse",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-o-level-english",
+      "curriculum": "cambridge",
+      "level": "O Level",
+      "level_id": "o-level",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-o-level-bangla",
+      "curriculum": "cambridge",
+      "level": "O Level",
+      "level_id": "o-level",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-as-level-english",
+      "curriculum": "cambridge",
+      "level": "AS Level",
+      "level_id": "as-level",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-as-level-bangla",
+      "curriculum": "cambridge",
+      "level": "AS Level",
+      "level_id": "as-level",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-a-level-english",
+      "curriculum": "cambridge",
+      "level": "A Level",
+      "level_id": "a-level",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "cambridge-a-level-bangla",
+      "curriculum": "cambridge",
+      "level": "A Level",
+      "level_id": "a-level",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-primary-english",
+      "curriculum": "edexcel",
+      "level": "Primary",
+      "level_id": "primary",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-primary-bangla",
+      "curriculum": "edexcel",
+      "level": "Primary",
+      "level_id": "primary",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-lower-secondary-english",
+      "curriculum": "edexcel",
+      "level": "Lower Secondary",
+      "level_id": "lower-secondary",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-lower-secondary-bangla",
+      "curriculum": "edexcel",
+      "level": "Lower Secondary",
+      "level_id": "lower-secondary",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-international-gcse-english",
+      "curriculum": "edexcel",
+      "level": "International GCSE",
+      "level_id": "international-gcse",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-international-gcse-bangla",
+      "curriculum": "edexcel",
+      "level": "International GCSE",
+      "level_id": "international-gcse",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-o-level-english",
+      "curriculum": "edexcel",
+      "level": "O Level",
+      "level_id": "o-level",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-o-level-bangla",
+      "curriculum": "edexcel",
+      "level": "O Level",
+      "level_id": "o-level",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-international-as-english",
+      "curriculum": "edexcel",
+      "level": "International AS",
+      "level_id": "international-as",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-international-as-bangla",
+      "curriculum": "edexcel",
+      "level": "International AS",
+      "level_id": "international-as",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-international-a-level-english",
+      "curriculum": "edexcel",
+      "level": "International A Level",
+      "level_id": "international-a-level",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "edexcel-international-a-level-bangla",
+      "curriculum": "edexcel",
+      "level": "International A Level",
+      "level_id": "international-a-level",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "user-provided-or-licensed-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "madrasa-ebtedayee-bangla",
+      "curriculum": "madrasa",
+      "level": "Ebtedayee",
+      "level_id": "ebtedayee",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "madrasa-ebtedayee-arabic",
+      "curriculum": "madrasa",
+      "level": "Ebtedayee",
+      "level_id": "ebtedayee",
+      "language": "Arabic",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "madrasa-ebtedayee-english",
+      "curriculum": "madrasa",
+      "level": "Ebtedayee",
+      "level_id": "ebtedayee",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "madrasa-dakhil-bangla",
+      "curriculum": "madrasa",
+      "level": "Dakhil",
+      "level_id": "dakhil",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "madrasa-dakhil-arabic",
+      "curriculum": "madrasa",
+      "level": "Dakhil",
+      "level_id": "dakhil",
+      "language": "Arabic",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "madrasa-dakhil-english",
+      "curriculum": "madrasa",
+      "level": "Dakhil",
+      "level_id": "dakhil",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "madrasa-alim-bangla",
+      "curriculum": "madrasa",
+      "level": "Alim",
+      "level_id": "alim",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "madrasa-alim-arabic",
+      "curriculum": "madrasa",
+      "level": "Alim",
+      "level_id": "alim",
+      "language": "Arabic",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "madrasa-alim-english",
+      "curriculum": "madrasa",
+      "level": "Alim",
+      "level_id": "alim",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "technical-ssc-vocational-bangla",
+      "curriculum": "technical",
+      "level": "SSC Vocational",
+      "level_id": "ssc-vocational",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "technical-ssc-vocational-english",
+      "curriculum": "technical",
+      "level": "SSC Vocational",
+      "level_id": "ssc-vocational",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "technical-hsc-vocational-bangla",
+      "curriculum": "technical",
+      "level": "HSC Vocational",
+      "level_id": "hsc-vocational",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "technical-hsc-vocational-english",
+      "curriculum": "technical",
+      "level": "HSC Vocational",
+      "level_id": "hsc-vocational",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "technical-diploma-bangla",
+      "curriculum": "technical",
+      "level": "Diploma",
+      "level_id": "diploma",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "technical-diploma-english",
+      "curriculum": "technical",
+      "level": "Diploma",
+      "level_id": "diploma",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "official-public-source-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "admission-school-admission-bangla",
+      "curriculum": "admission",
+      "level": "School Admission",
+      "level_id": "school-admission",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "open-or-user-provided-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "admission-school-admission-english",
+      "curriculum": "admission",
+      "level": "School Admission",
+      "level_id": "school-admission",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "open-or-user-provided-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "admission-college-admission-bangla",
+      "curriculum": "admission",
+      "level": "College Admission",
+      "level_id": "college-admission",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "open-or-user-provided-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "admission-college-admission-english",
+      "curriculum": "admission",
+      "level": "College Admission",
+      "level_id": "college-admission",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "open-or-user-provided-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "admission-university-admission-bangla",
+      "curriculum": "admission",
+      "level": "University Admission",
+      "level_id": "university-admission",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "open-or-user-provided-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "admission-university-admission-english",
+      "curriculum": "admission",
+      "level": "University Admission",
+      "level_id": "university-admission",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "open-or-user-provided-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "admission-medical-admission-bangla",
+      "curriculum": "admission",
+      "level": "Medical Admission",
+      "level_id": "medical-admission",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "open-or-user-provided-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "admission-medical-admission-english",
+      "curriculum": "admission",
+      "level": "Medical Admission",
+      "level_id": "medical-admission",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "open-or-user-provided-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "admission-engineering-admission-bangla",
+      "curriculum": "admission",
+      "level": "Engineering Admission",
+      "level_id": "engineering-admission",
+      "language": "Bangla",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "open-or-user-provided-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    },
+    {
+      "id": "admission-engineering-admission-english",
+      "curriculum": "admission",
+      "level": "Engineering Admission",
+      "level_id": "engineering-admission",
+      "language": "English",
+      "subject_mapping_status": "pending",
+      "source_discovery_status": "pending",
+      "acquisition_policy": "open-or-user-provided-only",
+      "subjects": [],
+      "notes": "Populate subjects from an official or authorized curriculum source."
+    }
+  ],
+  "books": [
+    {
+      "id": "nctb-english-version-class-7-general-science-english-2026",
+      "curriculum": "nctb-english-version",
+      "level": "Class 7",
+      "level_id": "class-7",
+      "subject": "general-science",
+      "language": "English",
+      "year": 2026,
+      "title": "NCTB 2026 Class 7 English Version Science",
+      "source_type": "official-public-textbook",
+      "source_url": null,
+      "local_file": "textbooks/NCTB-2026-Class-7-English-Science.pdf",
+      "staging_file": "slickk_server/knowledge/_imports/nctb-2026-class-7-english-version-science-98a19652ab9b.json",
+      "download_status": "complete",
+      "import_status": "needs-human-review",
+      "promotion_status": "not-promoted",
+      "enabled": true
+    }
+  ]
+}
