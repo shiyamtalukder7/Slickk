@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Slickk native local educational AI runtime"
 requires-python = ">=3.11"
 dependencies = [
+    "gdown>=6.1,<7",
     "jsonschema>=4.26,<5",
     "pillow>=12.3,<13",
     "pymupdf>=1.28,<2",
@@ -19,6 +20,7 @@ dependencies = [
 slickk = "slickk_server.cli:main"
 slickk-import-textbook = "slickk_server.textbook_ingest:main"
 slickk-import-all-textbooks = "slickk_server.textbook_batch:main"
+slickk-download-textbooks = "slickk_server.textbook_download:main"
 slickk-promote-textbook = "slickk_server.textbook_promote:main"
 
 [tool.setuptools]
