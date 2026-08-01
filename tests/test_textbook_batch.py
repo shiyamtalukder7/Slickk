@@ -7,6 +7,7 @@ from unittest.mock import patch
 from slickk_server.textbook_batch import (
     TextbookBatchError,
     load_catalog,
+    local_state_path_for_catalog,
     run_batch,
 )
 
@@ -193,10 +194,8 @@ class TextbookBatchTests(unittest.TestCase):
             )
             mocked_ingest.assert_called_once()
 
-            updated = json.loads(
-                catalog_path.read_text(
-                    encoding="utf-8"
-                )
+            updated = load_catalog(
+                catalog_path
             )
             updated_book = updated["books"][0]
 
@@ -213,6 +212,91 @@ class TextbookBatchTests(unittest.TestCase):
             )
             self.assertIsNone(
                 updated_book["last_error"]
+            )
+
+    def test_runtime_progress_does_not_modify_catalog(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            book = make_book()
+
+            project, catalog_path = self.create_project(
+                root,
+                book,
+            )
+
+            textbook = (
+                project
+                / "textbooks"
+                / "science.txt"
+            )
+            textbook.parent.mkdir(parents=True)
+            textbook.write_text(
+                "Respiration releases energy.",
+                encoding="utf-8",
+            )
+
+            staging = (
+                project
+                / "slickk_server"
+                / "knowledge"
+                / "_imports"
+                / "science.json"
+            )
+            staging.parent.mkdir(parents=True)
+            staging.write_text(
+                "{}",
+                encoding="utf-8",
+            )
+
+            original_catalog = catalog_path.read_bytes()
+
+            with patch(
+                "slickk_server.textbook_batch."
+                "ingest_textbook",
+                return_value=(staging, {}),
+            ):
+                summary = run_batch(catalog_path)
+
+            self.assertEqual(
+                summary["imported"],
+                1,
+            )
+
+            self.assertEqual(
+                catalog_path.read_bytes(),
+                original_catalog,
+            )
+
+            state_path = local_state_path_for_catalog(
+                catalog_path
+            )
+
+            self.assertTrue(state_path.is_file())
+
+            state = json.loads(
+                state_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            self.assertEqual(
+                state["format"],
+                "slickk-textbook-runtime-state-v1",
+            )
+            self.assertEqual(
+                state["books"]["science-book"][
+                    "import_status"
+                ],
+                "needs-human-review",
+            )
+
+            overlaid = load_catalog(catalog_path)
+
+            self.assertEqual(
+                overlaid["books"][0]["import_status"],
+                "needs-human-review",
             )
 
     def test_missing_local_file_is_recorded_as_failure(
@@ -237,10 +321,8 @@ class TextbookBatchTests(unittest.TestCase):
                 1,
             )
 
-            updated = json.loads(
-                catalog_path.read_text(
-                    encoding="utf-8"
-                )
+            updated = load_catalog(
+                catalog_path
             )
             updated_book = updated["books"][0]
 

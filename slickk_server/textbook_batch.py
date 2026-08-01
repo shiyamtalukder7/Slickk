@@ -35,6 +35,26 @@ EXTRACTION_CACHE_FORMAT = (
     "slickk-textbook-extraction-cache-v1"
 )
 
+RUNTIME_STATE_FORMAT = (
+    "slickk-textbook-runtime-state-v1"
+)
+
+RUNTIME_BOOK_FIELDS = frozenset(
+    {
+        "download_status",
+        "download_error",
+        "last_downloaded_at",
+        "last_download_failed_at",
+        "import_status",
+        "staging_file",
+        "promotion_status",
+        "last_started_at",
+        "last_imported_at",
+        "last_failed_at",
+        "last_error",
+    }
+)
+
 
 class TextbookBatchError(RuntimeError):
     """Raised when the textbook batch catalogue is invalid."""
@@ -42,6 +62,132 @@ class TextbookBatchError(RuntimeError):
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def local_state_path_for_catalog(
+    catalog_path: Path,
+) -> Path:
+    """Return the ignored runtime-state file for a catalogue."""
+
+    resolved = catalog_path.expanduser().resolve()
+
+    return (
+        resolved.parent
+        / "_imports"
+        / "textbook_runtime_state.json"
+    )
+
+
+def load_runtime_state(
+    state_path: Path,
+) -> dict[str, Any]:
+    """Load local textbook progress without touching Git data."""
+
+    if not state_path.is_file():
+        return {
+            "format": RUNTIME_STATE_FORMAT,
+            "books": {},
+        }
+
+    try:
+        payload = json.loads(
+            state_path.read_text(
+                encoding="utf-8-sig"
+            )
+        )
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+    ) as error:
+        raise TextbookBatchError(
+            f"Could not read textbook runtime state: {error}"
+        ) from error
+
+    if not isinstance(payload, dict):
+        raise TextbookBatchError(
+            "The textbook runtime state must be a JSON object."
+        )
+
+    if payload.get("format") != RUNTIME_STATE_FORMAT:
+        raise TextbookBatchError(
+            "Unsupported textbook runtime-state format."
+        )
+
+    if not isinstance(payload.get("books"), dict):
+        raise TextbookBatchError(
+            "The textbook runtime state has no valid books object."
+        )
+
+    return payload
+
+
+def apply_runtime_state(
+    catalog: dict[str, Any],
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    """Overlay local progress onto immutable catalogue records."""
+
+    state_books = state.get("books", {})
+
+    for raw_book in catalog.get("books", []):
+        if not isinstance(raw_book, dict):
+            continue
+
+        book_id = str(
+            raw_book.get("id") or ""
+        ).strip()
+
+        if not book_id:
+            continue
+
+        saved = state_books.get(book_id)
+
+        if not isinstance(saved, dict):
+            continue
+
+        for field in RUNTIME_BOOK_FIELDS:
+            if field in saved:
+                raw_book[field] = saved[field]
+
+    return catalog
+
+
+def build_runtime_state(
+    catalog: dict[str, Any],
+) -> dict[str, Any]:
+    """Extract only machine-local progress from a catalogue."""
+
+    state_books: dict[str, dict[str, Any]] = {}
+
+    for raw_book in catalog.get("books", []):
+        if not isinstance(raw_book, dict):
+            continue
+
+        book_id = str(
+            raw_book.get("id") or ""
+        ).strip()
+
+        if not book_id:
+            continue
+
+        values = {
+            field: raw_book[field]
+            for field in RUNTIME_BOOK_FIELDS
+            if field in raw_book
+        }
+
+        if values:
+            state_books[book_id] = values
+
+    return {
+        "format": RUNTIME_STATE_FORMAT,
+        "updated_at": utc_now(),
+        "catalog_version": catalog.get(
+            "catalog_version"
+        ),
+        "books": state_books,
+    }
 
 
 def load_catalog(path: Path) -> dict[str, Any]:
@@ -75,24 +221,38 @@ def load_catalog(path: Path) -> dict[str, Any]:
             "The textbook catalogue has no valid books list."
         )
 
-    return payload
+    state_path = local_state_path_for_catalog(path)
+    state = load_runtime_state(state_path)
+
+    return apply_runtime_state(
+        payload,
+        state,
+    )
 
 
 def save_catalog(
     path: Path,
     payload: dict[str, Any],
 ) -> None:
-    """Save catalogue progress atomically."""
+    """Save machine-local progress outside the tracked catalogue."""
 
-    payload["updated_at"] = utc_now()
+    state_path = local_state_path_for_catalog(path)
+    state_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    temporary_path = path.with_name(
-        path.name + ".tmp"
+    state_payload = build_runtime_state(
+        payload
+    )
+
+    temporary_path = state_path.with_name(
+        state_path.name + ".tmp"
     )
 
     temporary_path.write_text(
         json.dumps(
-            payload,
+            state_payload,
             indent=2,
             ensure_ascii=False,
         )
@@ -100,7 +260,7 @@ def save_catalog(
         encoding="utf-8",
     )
 
-    temporary_path.replace(path)
+    temporary_path.replace(state_path)
 
 
 def project_root_for_catalog(

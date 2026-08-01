@@ -4,6 +4,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from slickk_server.textbook_batch import (
+    load_catalog,
+    local_state_path_for_catalog,
+)
 from slickk_server.textbook_download import (
     TextbookDownloadError,
     download_catalog_textbooks,
@@ -112,6 +116,8 @@ class TextbookDownloadTests(unittest.TestCase):
                 / "shared.pdf"
             )
 
+            original_catalog = catalog_path.read_bytes()
+
             def fake_download(
                 *,
                 id: str,
@@ -150,10 +156,18 @@ class TextbookDownloadTests(unittest.TestCase):
                 2,
             )
 
-            updated = json.loads(
-                catalog_path.read_text(
-                    encoding="utf-8"
-                )
+            self.assertEqual(
+                catalog_path.read_bytes(),
+                original_catalog,
+            )
+
+            state_path = local_state_path_for_catalog(
+                catalog_path
+            )
+            self.assertTrue(state_path.is_file())
+
+            updated = load_catalog(
+                catalog_path
             )
 
             self.assertTrue(
