@@ -1,10 +1,12 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from slickk_server.textbook_ingest import (
     TextbookIngestError,
     ingest_textbook,
+    ocr_language_for_metadata,
     split_text,
 )
 
@@ -64,6 +66,83 @@ class TextbookIngestTests(unittest.TestCase):
             self.assertTrue(
                 set(previous.split())
                 & set(current.split())
+            )
+
+    def test_ocr_language_selection(self) -> None:
+        self.assertEqual(
+            ocr_language_for_metadata(
+                subject="general-science",
+                language="English",
+            ),
+            "eng",
+        )
+
+        self.assertEqual(
+            ocr_language_for_metadata(
+                subject="bangla",
+                language="Bangla",
+            ),
+            "ben+eng",
+        )
+
+        self.assertEqual(
+            ocr_language_for_metadata(
+                subject="general-science",
+                language="\u09ac\u09be\u0982\u09b2\u09be",
+            ),
+            "ben+eng",
+        )
+
+        self.assertEqual(
+            ocr_language_for_metadata(
+                subject="arabic",
+                language="Bangla",
+            ),
+            "ara+ben+eng",
+        )
+
+    def test_ingest_passes_selected_ocr_language(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "bangla.txt"
+            output_directory = root / "output"
+
+            source.write_text(
+                "Bangla textbook test content.",
+                encoding="utf-8",
+            )
+
+            with patch(
+                "slickk_server.textbook_ingest."
+                "extract_source_pages",
+                return_value=[
+                    {
+                        "page": 1,
+                        "text": (
+                            "Bangla textbook test content."
+                        ),
+                    }
+                ],
+            ) as mocked_extract:
+                _, payload = ingest_textbook(
+                    source,
+                    curriculum="nctb-bangla",
+                    level="Class 7",
+                    subject="Bangla",
+                    language="Bangla",
+                    output_directory=output_directory,
+                )
+
+            mocked_extract.assert_called_once_with(
+                source.resolve(),
+                ocr_language="ben+eng",
+            )
+
+            self.assertEqual(
+                payload["source"]["ocr_language"],
+                "ben+eng",
             )
 
     def test_plain_text_is_staged_for_review(self) -> None:

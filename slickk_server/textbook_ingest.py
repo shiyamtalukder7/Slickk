@@ -201,10 +201,42 @@ def configure_tesseract() -> str:
     )
 
 
+def ocr_language_for_metadata(
+    *,
+    subject: str,
+    language: str,
+) -> str:
+    """Select Tesseract languages for the textbook content."""
+
+    subject_key = (
+        subject.strip()
+        .casefold()
+        .replace("_", "-")
+    )
+    language_key = language.strip().casefold()
+
+    if subject_key == "arabic":
+        return "ara+ben+eng"
+
+    if (
+        subject_key == "bangla"
+        or language_key in {
+            "bangla",
+            "bengali",
+            "\u09ac\u09be\u0982\u09b2\u09be",
+        }
+    ):
+        return "ben+eng"
+
+    return "eng"
+
+
 def extract_source_pages(
     source_path: Path,
+    *,
+    ocr_language: str = "eng",
 ) -> list[dict[str, Any]]:
-    """Extract text from PDF, TXT or Markdown with OCR fallback."""
+    """Extract text with language-aware OCR fallback."""
 
     suffix = source_path.suffix.lower()
 
@@ -253,7 +285,9 @@ def extract_source_pages(
                     if not ocr_configured:
                         executable = configure_tesseract()
                         print(
-                            f"OCR fallback enabled: {executable}",
+                            "OCR fallback enabled: "
+                            f"{executable} "
+                            f"(languages: {ocr_language})",
                             flush=True,
                         )
                         ocr_configured = True
@@ -279,7 +313,7 @@ def extract_source_pages(
                         extracted = (
                             pytesseract.image_to_string(
                                 image,
-                                lang="eng",
+                                lang=ocr_language,
                                 config="--oem 3 --psm 3",
                             )
                         )
@@ -492,7 +526,15 @@ def ingest_textbook(
         language=language,
     )
 
-    pages = extract_source_pages(source_path)
+    ocr_language = ocr_language_for_metadata(
+        subject=metadata["subject"],
+        language=metadata["language"],
+    )
+
+    pages = extract_source_pages(
+        source_path,
+        ocr_language=ocr_language,
+    )
     fingerprint = file_sha256(source_path)
 
     chunks = build_staging_chunks(
@@ -530,6 +572,7 @@ def ingest_textbook(
                 bool(page.get("text"))
                 for page in pages
             ),
+            "ocr_language": ocr_language,
         },
         "metadata": {
             **metadata,
