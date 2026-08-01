@@ -309,6 +309,59 @@ class TextbookIngestTests(unittest.TestCase):
                 "eng",
             )
 
+    def test_shared_source_creates_separate_curriculum_packages(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "english.txt"
+            output_directory = root / "output"
+
+            source.write_text(
+                (
+                    "English language lessons develop "
+                    "reading and communication skills. "
+                )
+                * 20,
+                encoding="utf-8",
+            )
+
+            bangla_path, bangla_payload = ingest_textbook(
+                source,
+                curriculum="nctb-bangla",
+                level="Class 7",
+                subject="English",
+                language="English",
+                title="English For Today",
+                output_directory=output_directory,
+            )
+
+            english_path, english_payload = ingest_textbook(
+                source,
+                curriculum="nctb-english-version",
+                level="Class 7",
+                subject="English",
+                language="English",
+                title="English For Today",
+                output_directory=output_directory,
+            )
+
+            self.assertNotEqual(
+                bangla_path,
+                english_path,
+            )
+            self.assertTrue(bangla_path.is_file())
+            self.assertTrue(english_path.is_file())
+
+            self.assertEqual(
+                bangla_payload["metadata"]["curriculum"],
+                "nctb-bangla",
+            )
+            self.assertEqual(
+                english_payload["metadata"]["curriculum"],
+                "nctb-english-version",
+            )
+
     def test_unknown_curriculum_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "lesson.txt"

@@ -748,6 +748,10 @@ def ingest_textbook(
     )
 
     output_name = (
+        f"{slugify(metadata['curriculum'])}-"
+        f"{slugify(metadata['level_id'])}-"
+        f"{slugify(metadata['subject'])}-"
+        f"{slugify(metadata['language'])}-"
         f"{slugify(textbook_title)}-"
         f"{fingerprint[:12]}.json"
     )
