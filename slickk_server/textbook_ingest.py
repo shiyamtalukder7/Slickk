@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,123 @@ def normalize_extracted_text(value: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     return text.strip()
+
+
+def native_text_is_usable(
+    value: str,
+    *,
+    ocr_language: str,
+    minimum_characters: int = 80,
+) -> bool:
+    """Reject short or structurally corrupted PDF text layers."""
+
+    text = normalize_extracted_text(value)
+
+    if len(text) < minimum_characters:
+        return False
+
+    if "\ufffd" in text:
+        return False
+
+    language_ids = {
+        item.strip().casefold()
+        for item in ocr_language.split("+")
+        if item.strip()
+    }
+
+    letters = [
+        character
+        for character in text
+        if character.isalpha()
+    ]
+
+    if len(letters) < 12:
+        return False
+
+    def is_allowed_letter(
+        character: str,
+    ) -> bool:
+        code_point = ord(character)
+
+        # Basic Latin, Latin-1 and common Latin Extended-A.
+        if (
+            0x0041 <= code_point <= 0x005A
+            or 0x0061 <= code_point <= 0x007A
+            or 0x00C0 <= code_point <= 0x017F
+        ):
+            return True
+
+        if (
+            "ben" in language_ids
+            and 0x0980 <= code_point <= 0x09FF
+        ):
+            return True
+
+        if "ara" in language_ids and (
+            0x0600 <= code_point <= 0x06FF
+            or 0x0750 <= code_point <= 0x077F
+            or 0x08A0 <= code_point <= 0x08FF
+            or 0xFB50 <= code_point <= 0xFDFF
+            or 0xFE70 <= code_point <= 0xFEFF
+        ):
+            return True
+
+        if (
+            {"san", "hin"} & language_ids
+            and 0x0900 <= code_point <= 0x097F
+        ):
+            return True
+
+        return False
+
+    unexpected_letters = [
+        character
+        for character in letters
+        if not is_allowed_letter(character)
+    ]
+
+    unexpected_ratio = (
+        len(unexpected_letters)
+        / len(letters)
+    )
+
+    if (
+        len(unexpected_letters) >= 3
+        and unexpected_ratio > 0.05
+    ):
+        return False
+
+    # A combining mark or dependent vowel sign cannot safely
+    # begin a word. Malformed PDF font mappings commonly create
+    # these orphan marks.
+    previous_is_base = False
+
+    for character in text:
+        category = unicodedata.category(
+            character
+        )
+
+        if category in {"Mn", "Mc", "Me"}:
+            if not previous_is_base:
+                return False
+
+            continue
+
+        if character in {
+            "\u200c",
+            "\u200d",
+        }:
+            continue
+
+        if character.isspace():
+            previous_is_base = False
+        else:
+            previous_is_base = (
+                character.isalpha()
+                or character.isdigit()
+            )
+
+    return True
 
 
 def file_sha256(path: Path) -> str:
@@ -278,7 +396,10 @@ def extract_source_pages(
                 except Exception:
                     native_text = ""
 
-                if len(native_text) >= 80:
+                if native_text_is_usable(
+                    native_text,
+                    ocr_language=ocr_language,
+                ):
                     extracted = native_text
                     native_page_count += 1
                 else:

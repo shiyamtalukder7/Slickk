@@ -6,6 +6,7 @@ from unittest.mock import patch
 from slickk_server.textbook_ingest import (
     TextbookIngestError,
     ingest_textbook,
+    native_text_is_usable,
     ocr_language_for_metadata,
     split_text,
 )
@@ -67,6 +68,72 @@ class TextbookIngestTests(unittest.TestCase):
                 set(previous.split())
                 & set(current.split())
             )
+
+    def test_native_quality_gate_accepts_english(
+        self,
+    ) -> None:
+        text = (
+            "Respiration releases energy from glucose "
+            "inside living cells. "
+        ) * 4
+
+        self.assertTrue(
+            native_text_is_usable(
+                text,
+                ocr_language="eng",
+            )
+        )
+
+    def test_native_quality_gate_accepts_bangla(
+        self,
+    ) -> None:
+        text = (
+            "\u09ac\u09be\u0982\u09b2\u09be "
+            "\u09aa\u09be\u09a0\u09cd\u09af\u09ac\u0987 "
+            "\u09b6\u09bf\u0995\u09cd\u09b7\u09be\u09b0\u09cd\u09a5\u09c0\u09a6\u09c7\u09b0 "
+            "\u099c\u09cd\u099e\u09be\u09a8 "
+            "\u0993 "
+            "\u09a6\u0995\u09cd\u09b7\u09a4\u09be "
+            "\u09ac\u09c3\u09a6\u09cd\u09a7\u09bf "
+            "\u0995\u09b0\u09c7\u0964 "
+        ) * 4
+
+        self.assertTrue(
+            native_text_is_usable(
+                text,
+                ocr_language="ben+eng",
+            )
+        )
+
+    def test_native_quality_gate_rejects_corrupted_bangla(
+        self,
+    ) -> None:
+        corrupted = (
+            "\u099c\u09be\u09a4\u09c0\u09df "
+            "\u09bf\u09b6\u027b\u09be\u0248\u09ae "
+            "\u0993 "
+            "\u09aa\u09be\u038e\u09aa\u09c1\u031c "
+            "\u0995 "
+            "\u09c7\u09ac\u09be\u09a1\u09f0\u09cd, "
+            "\u09ac\u09be\u0982\u09b2\u09be\u09a6\u09c7\u09b6 "
+        ) * 4
+
+        self.assertFalse(
+            native_text_is_usable(
+                corrupted,
+                ocr_language="ben+eng",
+            )
+        )
+
+    def test_native_quality_gate_rejects_short_text(
+        self,
+    ) -> None:
+        self.assertFalse(
+            native_text_is_usable(
+                "A short page heading.",
+                ocr_language="eng",
+            )
+        )
 
     def test_ocr_language_selection(self) -> None:
         self.assertEqual(
