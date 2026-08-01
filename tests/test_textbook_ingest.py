@@ -203,6 +203,45 @@ class TextbookIngestTests(unittest.TestCase):
                 )
             )
 
+    def test_nctb_bangla_accepts_english_textbook(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "english.txt"
+
+            source.write_text(
+                (
+                    "English language lessons develop "
+                    "reading and communication skills. "
+                )
+                * 20,
+                encoding="utf-8",
+            )
+
+            _, payload = ingest_textbook(
+                source,
+                curriculum="nctb-bangla",
+                level="Class 7",
+                subject="English",
+                language="English",
+                title="English For Today",
+                output_directory=root / "output",
+            )
+
+            self.assertEqual(
+                payload["metadata"]["curriculum"],
+                "nctb-bangla",
+            )
+            self.assertEqual(
+                payload["metadata"]["language"],
+                "english",
+            )
+            self.assertEqual(
+                payload["source"]["ocr_language"],
+                "eng",
+            )
+
     def test_unknown_curriculum_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "lesson.txt"
