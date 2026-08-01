@@ -19,6 +19,7 @@ dependencies = [
 slickk = "slickk_server.cli:main"
 slickk-import-textbook = "slickk_server.textbook_ingest:main"
 slickk-import-all-textbooks = "slickk_server.textbook_batch:main"
+slickk-promote-textbook = "slickk_server.textbook_promote:main"
 
 [tool.setuptools]
 packages = [
