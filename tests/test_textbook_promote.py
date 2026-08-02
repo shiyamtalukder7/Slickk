@@ -241,6 +241,40 @@ class TextbookPromotionTests(unittest.TestCase):
                     output_directory=root / "approved",
                 )
 
+    def test_ocr_rejected_chunk_cannot_be_promoted(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payload = staging_payload()
+
+            payload["chunks"][0]["review"][
+                "notes"
+            ] = (
+                "[OCR_REJECTED_PAGE] "
+                "Unresolved OCR corruption."
+            )
+
+            source = self.write_staging(
+                root,
+                payload,
+            )
+
+            output_directory = root / "approved"
+
+            with self.assertRaisesRegex(
+                TextbookPromotionError,
+                "OCR_REJECTED_PAGE",
+            ):
+                promote_textbook(
+                    source,
+                    output_directory=output_directory,
+                )
+
+            self.assertFalse(
+                output_directory.exists()
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

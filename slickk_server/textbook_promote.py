@@ -23,6 +23,7 @@ from slickk_server.knowledge_base import (
 
 LESSON_SCHEMA_PATH = KNOWLEDGE_DIR / "lesson_schema.json"
 DEFAULT_OUTPUT_DIRECTORY = KNOWLEDGE_DIR / "approved"
+OCR_REJECTION_MARKER = "[OCR_REJECTED_PAGE]"
 
 
 class TextbookPromotionError(RuntimeError):
@@ -164,6 +165,21 @@ def validate_approved_chunk(
 
     if review.get("approved") is not True:
         return None
+
+    notes = str(
+        review.get("notes", "")
+    )
+
+    if OCR_REJECTION_MARKER in notes:
+        chunk_id = str(
+            chunk.get("id", "unknown")
+        )
+
+        raise TextbookPromotionError(
+            f"Approved chunk {chunk_id} contains "
+            f"{OCR_REJECTION_MARKER} and cannot "
+            "be promoted."
+        )
 
     reviewer = str(
         review.get("reviewer", "")
