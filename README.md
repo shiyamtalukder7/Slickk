@@ -1,5 +1,11 @@
 # Welcome to your Expo app 👋
 
+The active product and engineering phases are maintained in
+[ROADMAP.md](./ROADMAP.md).
+
+Slickk's permanent AI product identity and replaceable model-runtime design are
+documented in [Slickk LLM architecture](./docs/SLICKK_LLM_ARCHITECTURE.md).
+
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
 ## Get started

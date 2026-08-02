@@ -42,6 +42,10 @@ example
 /ios
 /android
 
+# local implementation coordination
+SYSTEM_DESIGN_PLAN.md
+IMPLEMENTATION_PLAN.md
+
 # local backend secrets, private learner data, and curriculum files
 server/.env
 server/data/*.db
@@ -49,9 +53,11 @@ server/data/*.db-*
 server/data/*.sqlite
 server/data/*.sqlite-*
 server/data/ocr-cache/
+server/data/school-sources/
 server/data/curriculum-catalog.json
 server/data/curriculum-sync.json
 server/data/curriculum-sync.json.tmp
+server/data/training/
 server/books/
 
 # local textbook sources, OCR staging, and Python caches
@@ -61,3 +67,10 @@ server/books/
 /slickk_server/textbook_ingest.py.bak-before-ocr
 __pycache__/
 *.pyc
+
+# local generated development artifacts
+/.codex-remote-attachments/
+*.log
+*.egg-info/
+*.py[cod]
+/streaming-test.json
