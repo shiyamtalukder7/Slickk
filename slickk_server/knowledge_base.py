@@ -208,9 +208,14 @@ def normalize_language(value: str) -> str:
 
 
 def load_documents() -> list[dict[str, Any]]:
-    """Load valid local lesson documents from all knowledge folders."""
+    """Load allowlisted local educational documents.
+
+    Normal knowledge files remain available. Files below ``_imports``
+    are excluded except for the exact machine-validated runtime overlay.
+    """
 
     documents: list[dict[str, Any]] = []
+    seen_document_ids: set[str] = set()
 
     if not KNOWLEDGE_DIR.exists():
         return documents
@@ -222,14 +227,43 @@ def load_documents() -> list[dict[str, Any]]:
         "teaching_methods.json",
     }
 
+    runtime_overlay = (
+        KNOWLEDGE_DIR
+        / "_imports"
+        / "_machine_validated"
+        / "textbook_teaching_overlay_runtime.json"
+    ).resolve()
+
     for path in sorted(KNOWLEDGE_DIR.rglob("*.json")):
+        resolved_path = path.resolve()
+
         if path.name.lower() in configuration_files:
             continue
 
+        relative_parts = {
+            part.casefold()
+            for part in path.relative_to(
+                KNOWLEDGE_DIR
+            ).parts
+        }
+
+        if (
+            "_imports" in relative_parts
+            and resolved_path != runtime_overlay
+        ):
+            continue
+
         try:
-            with path.open("r", encoding="utf-8-sig") as file:
+            with path.open(
+                "r",
+                encoding="utf-8-sig",
+            ) as file:
                 payload = json.load(file)
-        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        except (
+            OSError,
+            UnicodeError,
+            json.JSONDecodeError,
+        ) as error:
             print(
                 f"[Slickk] Skipping invalid knowledge file "
                 f"{path}: {error}"
@@ -239,14 +273,61 @@ def load_documents() -> list[dict[str, Any]]:
         if not isinstance(payload, dict):
             continue
 
+        if resolved_path == runtime_overlay:
+            if (
+                payload.get("format")
+                != "slickk-runtime-textbook-overlay-v1"
+            ):
+                print(
+                    "[Slickk] Skipping runtime textbook "
+                    "overlay with an unsupported format."
+                )
+                continue
+
+            if (
+                payload.get(
+                    "automatic_production_promotion"
+                )
+                is not False
+            ):
+                print(
+                    "[Slickk] Skipping runtime textbook "
+                    "overlay because automatic promotion "
+                    "is not disabled."
+                )
+                continue
+
+            if payload.get(
+                "human_reviewed"
+            ) is not False:
+                print(
+                    "[Slickk] Skipping runtime textbook "
+                    "overlay with invalid review metadata."
+                )
+                continue
+
         items = payload.get("documents")
 
         if not isinstance(items, list):
             continue
 
-        documents.extend(
-            item for item in items if isinstance(item, dict)
-        )
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            document_id = str(
+                item.get("id") or ""
+            ).strip()
+
+            if document_id:
+                if document_id in seen_document_ids:
+                    continue
+
+                seen_document_ids.add(
+                    document_id
+                )
+
+            documents.append(item)
 
     return documents
 
