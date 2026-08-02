@@ -343,3 +343,78 @@ test('Class 9 profile can retrieve a Class 9-10 syllabus PDF', () => {
     store.close();
   }
 });
+
+test('OCR evidence regions persist with student-scoped corrections', () => {
+  const store = createCurriculumStore(':memory:');
+
+  try {
+    const imported = store.importDocument({
+      ...textbook(),
+      sha256: 'regional-evidence-book',
+      pages: [
+        {
+          pageNumber: 7,
+          text: 'The force is ten newtons.',
+          regions: [
+            {
+              regionId: 'page-7-region-1',
+              kind: 'equation',
+              text: 'F = 10 N',
+              originalText: 'F = l0 N',
+              boundingBox: {
+                x: 0.2,
+                y: 0.3,
+                width: 0.4,
+                height: 0.1,
+              },
+              confidence: 0.78,
+              source: 'ocr',
+              safetyFindings: [],
+            },
+          ],
+        },
+      ],
+    });
+    const documentId = imported.document.id;
+
+    assert.equal(
+      store.listEvidenceRegions(documentId, 7)[0]
+        .originalText,
+      'F = l0 N'
+    );
+
+    store.correctEvidenceRegion({
+      documentId,
+      regionId: 'page-7-region-1',
+      studentId: 'student-a',
+      text: 'F = 10 N',
+    });
+
+    assert.equal(
+      store.listEvidenceRegions(
+        documentId,
+        7,
+        'student-a'
+      )[0].text,
+      'F = 10 N'
+    );
+    assert.equal(
+      store.listEvidenceRegions(
+        documentId,
+        7,
+        'student-b'
+      )[0].text,
+      'F = 10 N'
+    );
+    assert.equal(
+      store.listEvidenceRegions(
+        documentId,
+        7,
+        'student-b'
+      )[0].correction,
+      null
+    );
+  } finally {
+    store.close();
+  }
+});

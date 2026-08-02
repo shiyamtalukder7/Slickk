@@ -73,6 +73,16 @@ test('live tutor prompt uses an adaptive private-teacher loop', () => {
   );
 });
 
+test('tutor prompt identifies Slickk LLM as an education system', () => {
+  const prompt = buildStreamingTutorSystemPrompt(
+    liveRequest()
+  );
+
+  assert.match(prompt, /You are Slickk LLM/i);
+  assert.match(prompt, /not a generic chatbot/i);
+  assert.match(prompt, /never claim abilities or training you do not have/i);
+});
+
 test('live tutor prompt requires voice-safe prose', () => {
   const prompt = buildStreamingTutorSystemPrompt(
     liveRequest()

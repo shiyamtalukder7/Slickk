@@ -10,8 +10,18 @@ const {
   qualificationForProfile,
 } = require('./catalog/english-medium');
 const {
+  seedEnglishMediumSchools,
+} = require('./catalog/english-medium-schools');
+const {
+  IPEMIS_PRIMARY_DIRECTORY_URL,
+  searchIpemisPrimarySchools,
+} = require('./catalog/ipemis');
+const {
   createTutorPlan,
 } = require('./pedagogy/orchestrator');
+const {
+  createTutorDecision,
+} = require('./agents/tutor-decision');
 const {
   curriculumSearchFilters,
   findCurriculumTrack,
@@ -20,9 +30,9 @@ const {
   teachingLanguageName,
 } = require('./profiles/student');
 const {
-  checkOllamaHealth,
-  OllamaError,
-} = require('./services/ollama');
+  defaultModelProvider,
+  isModelProviderError,
+} = require('./models/provider');
 const {
   askTutor,
   buildStreamingLearningTwin,
@@ -40,6 +50,22 @@ const {
   createSchoolStore,
   SchoolStoreError,
 } = require('./storage/schools');
+const {
+  createStudyPack,
+} = require('./study/tools');
+const {
+  scoreAssessment,
+} = require('./assessment/scoring');
+const {
+  authenticateApi,
+  createRateLimiter,
+  requireStudentAccess,
+  securityHeaders,
+} = require('./security/api');
+const {
+  analyzeMaterialBuffer,
+  MAX_MATERIAL_BYTES,
+} = require('./documents/material');
 
 function corsOptions(request, callback) {
   const origin = request.header('Origin');
@@ -56,7 +82,7 @@ function corsOptions(request, callback) {
 
 function errorStatus(error) {
   if (
-    error instanceof OllamaError ||
+    isModelProviderError(error) ||
     error instanceof ConversationStoreError ||
     error instanceof CurriculumStoreError ||
     error instanceof SchoolStoreError
@@ -69,7 +95,7 @@ function errorStatus(error) {
 
 function errorCode(error) {
   if (
-    error instanceof OllamaError ||
+    isModelProviderError(error) ||
     error instanceof ConversationStoreError ||
     error instanceof CurriculumStoreError ||
     error instanceof SchoolStoreError
@@ -88,19 +114,26 @@ function writeStreamEvent(response, event) {
 
 function createApp(options = {}) {
   const app = express();
+  const modelProvider =
+    options.modelProvider || defaultModelProvider;
+  const modelRuntime = modelProvider.runtime;
+  const modelIdentity = modelProvider.identity;
   const conversationStore =
     options.conversationStore || createConversationStore();
   const curriculumStore =
     options.curriculumStore || createCurriculumStore();
   const schoolStore =
     options.schoolStore || createSchoolStore();
+  seedEnglishMediumSchools(schoolStore);
 
   app.locals.conversationStore = conversationStore;
   app.locals.curriculumStore = curriculumStore;
   app.locals.schoolStore = schoolStore;
+  app.locals.modelProvider = modelProvider;
 
   app.disable('x-powered-by');
   app.use(cors(corsOptions));
+  app.use(securityHeaders);
   app.use(express.json({ limit: '1mb' }));
 
   app.use((request, response, next) => {
@@ -128,6 +161,14 @@ function createApp(options = {}) {
 
     next();
   });
+  app.use(
+    authenticateApi(config.apiCredentials)
+  );
+  app.use(
+    createRateLimiter({
+      maximum: config.rateLimitPerMinute,
+    })
+  );
 
   function curriculumAccessForStudent(studentId) {
     if (!studentId) {
@@ -207,7 +248,7 @@ function createApp(options = {}) {
               qualification?.provider || '',
           }
         : requestData;
-    const pedagogyPlan = createTutorPlan({
+    const basePedagogyPlan = createTutorPlan({
       requestData: effectiveRequestData,
       history,
       learnerProfile,
@@ -219,13 +260,20 @@ function createApp(options = {}) {
         {
           ...curriculumSearchFilters(
             educationProfile,
-            pedagogyPlan.subject
+            basePedagogyPlan.subject
           ),
           ...curriculumAccessForStudent(
             effectiveRequestData.studentId
           ),
         }
       );
+    const pedagogyPlan = {
+      ...basePedagogyPlan,
+      decision: createTutorDecision({
+        pedagogyPlan: basePedagogyPlan,
+        curriculumEvidence,
+      }),
+    };
     const enrichedRequestData = {
       ...effectiveRequestData,
       pedagogyPlan,
@@ -266,10 +314,10 @@ function createApp(options = {}) {
   app.get('/', (request, response) => {
     response.json({
       status: 'online',
-      service: 'Slickk Local Intelligence Core',
+      service: 'Slickk LLM',
       version: '7.0.0',
-      provider: 'ollama',
-      model: config.ollamaModel,
+      identity: modelIdentity,
+      runtime: modelRuntime,
       storage: 'local-sqlite',
       capabilities: [
         'adaptive tutoring',
@@ -290,7 +338,7 @@ function createApp(options = {}) {
         'misconception detection',
         'guided quizzes',
         'Learning Twin signals',
-        'private local AI',
+        'private Slickk LLM runtime',
       ],
       requestId: request.requestId,
     });
@@ -298,31 +346,39 @@ function createApp(options = {}) {
 
   app.get('/health', async (request, response) => {
     try {
-      const health = await checkOllamaHealth();
+      const health = await modelProvider.checkHealth();
       const status = health.modelInstalled ? 200 : 503;
 
       return response.status(status).json({
         ok: health.modelInstalled,
-        service: 'Slickk Local Intelligence Core',
-        ollama: 'connected',
+        service: 'Slickk LLM',
+        identity: modelIdentity,
+        runtime: {
+          ...modelRuntime,
+          status: 'connected',
+        },
         database: 'connected',
-        model: config.ollamaModel,
+        model: modelRuntime.model,
         modelInstalled: health.modelInstalled,
         installedModels: health.installedModels,
         timestamp: new Date().toISOString(),
         requestId: request.requestId,
         error: health.modelInstalled
           ? undefined
-          : `Install or select the model "${config.ollamaModel}".`,
+          : `Install or select the local model "${modelRuntime.model}".`,
       });
     } catch (error) {
       return response.status(503).json({
         ok: false,
-        service: 'Slickk Local Intelligence Core',
-        ollama: 'disconnected',
+        service: 'Slickk LLM',
+        identity: modelIdentity,
+        runtime: {
+          ...modelRuntime,
+          status: 'disconnected',
+        },
         database: 'connected',
-        model: config.ollamaModel,
-        error: 'Open Ollama on the laptop and try again.',
+        model: modelRuntime.model,
+        error: 'Start the configured Slickk LLM local runtime and try again.',
         code: errorCode(error),
         requestId: request.requestId,
       });
@@ -335,6 +391,12 @@ function createApp(options = {}) {
       return response.json({
         ...profileOptions(),
         schoolDirectory: schoolStore.status(),
+        primarySchoolDirectory: {
+          provider: 'DPE IPEMIS',
+          sourceUrl: IPEMIS_PRIMARY_DIRECTORY_URL,
+          searchMode: 'official-live-with-local-cache',
+          otherSchoolOptionSupported: true,
+        },
         requestId: request.requestId,
       });
     }
@@ -356,7 +418,9 @@ function createApp(options = {}) {
     }
   );
 
-  app.get('/api/schools/search', (request, response) => {
+  app.get(
+    '/api/schools/search',
+    async (request, response) => {
     try {
       const query =
         typeof request.query.q === 'string'
@@ -364,13 +428,56 @@ function createApp(options = {}) {
           : '';
       const limit = Number(request.query.limit);
 
+      const resultLimit = Number.isInteger(limit)
+        ? Math.min(30, Math.max(1, limit))
+        : 15;
+      const localSchools = schoolStore.search(
+        query,
+        resultLimit
+      );
+      const primarySchools =
+        await searchIpemisPrimarySchools(
+          query,
+          resultLimit
+        );
+
+      if (primarySchools.length > 0) {
+        schoolStore.importSchools(primarySchools);
+      }
+
+      const schools = Array.from(
+        {
+          length: Math.max(
+            localSchools.length,
+            primarySchools.length
+          ),
+        },
+        (_, index) => [
+          localSchools[index],
+          primarySchools[index],
+        ]
+      )
+        .flat()
+        .filter(Boolean)
+        .filter(
+          (school, index, items) =>
+            items.findIndex(
+              (candidate) =>
+                candidate.id === school.id
+            ) === index
+        )
+        .slice(0, resultLimit);
+
       return response.json({
         query,
-        schools: schoolStore.search(
-          query,
-          Number.isInteger(limit) ? limit : 15
-        ),
+        schools,
         directory: schoolStore.status(),
+        primaryDirectory: {
+          provider: 'DPE IPEMIS',
+          sourceUrl: IPEMIS_PRIMARY_DIRECTORY_URL,
+          online: primarySchools.length > 0,
+        },
+        otherSchoolOptionSupported: true,
         requestId: request.requestId,
       });
     } catch (error) {
@@ -380,7 +487,8 @@ function createApp(options = {}) {
         requestId: request.requestId,
       });
     }
-  });
+    }
+  );
 
   app.get(
     '/api/students/:studentId/profile',
@@ -394,6 +502,16 @@ function createApp(options = {}) {
           code: 'INVALID_STUDENT_ID',
           requestId: request.requestId,
         });
+      }
+
+      if (
+        !requireStudentAccess(
+          request,
+          response,
+          studentId
+        )
+      ) {
+        return;
       }
 
       const learnerProfile =
@@ -427,6 +545,16 @@ function createApp(options = {}) {
         });
       }
 
+      if (
+        !requireStudentAccess(
+          request,
+          response,
+          studentId
+        )
+      ) {
+        return;
+      }
+
       const parsed =
         parseStudentEducationProfile(request.body);
 
@@ -457,6 +585,84 @@ function createApp(options = {}) {
     }
   );
 
+  app.post('/api/study/packs', (request, response) => {
+    const documentId = String(
+      request.body?.documentId || ''
+    ).trim();
+    const studentId = String(
+      request.body?.studentId || ''
+    ).trim();
+    const page = Number(request.body?.page) || 0;
+    const available = curriculumStore
+      .listDocuments(
+        500,
+        curriculumAccessForStudent(studentId)
+      )
+      .some((document) => document.id === documentId);
+
+    if (!available) {
+      return response.status(404).json({
+        error: 'The learning document was not found.',
+        code: 'DOCUMENT_NOT_FOUND',
+        requestId: request.requestId,
+      });
+    }
+
+    try {
+      return response.status(201).json({
+        studyPack: createStudyPack({
+          title: request.body?.title,
+          language: request.body?.language,
+          regions: curriculumStore.listEvidenceRegions(
+            documentId,
+            page,
+            studentId
+          ),
+        }),
+        requestId: request.requestId,
+      });
+    } catch (error) {
+      return response
+        .status(Number(error.status) || 500)
+        .json({
+          error: error.message,
+          code: error.code || 'STUDY_PACK_ERROR',
+          requestId: request.requestId,
+        });
+    }
+  });
+
+  app.post(
+    '/api/assessments/score',
+    (request, response) => {
+      const responses = Array.isArray(
+        request.body?.responses
+      )
+        ? request.body.responses
+        : [];
+
+      if (
+        responses.length === 0 ||
+        responses.length > 100
+      ) {
+        return response.status(400).json({
+          error:
+            'Provide between 1 and 100 assessment responses.',
+          code: 'INVALID_ASSESSMENT_RESPONSES',
+          requestId: request.requestId,
+        });
+      }
+
+      return response.json({
+        report: scoreAssessment({
+          assessmentId: request.body?.assessmentId,
+          responses,
+        }),
+        requestId: request.requestId,
+      });
+    }
+  );
+
   app.get(
     '/api/students/:studentId/progress',
     (request, response) => {
@@ -469,6 +675,16 @@ function createApp(options = {}) {
           code: 'INVALID_STUDENT_ID',
           requestId: request.requestId,
         });
+      }
+
+      if (
+        !requireStudentAccess(
+          request,
+          response,
+          studentId
+        )
+      ) {
+        return;
       }
 
       return response.json({
@@ -495,6 +711,70 @@ function createApp(options = {}) {
       requestId: request.requestId,
     });
   });
+
+  app.post(
+    '/api/students/:studentId/materials/analyze',
+    express.raw({
+      type: 'application/octet-stream',
+      limit: MAX_MATERIAL_BYTES,
+    }),
+    async (request, response) => {
+      const studentId = String(
+        request.params.studentId || ''
+      ).trim();
+
+      if (!studentId || !Buffer.isBuffer(request.body)) {
+        return response.status(400).json({
+          error: 'A student and material file are required.',
+          code: 'INVALID_MATERIAL_REQUEST',
+          requestId: request.requestId,
+        });
+      }
+
+      if (
+        !requireStudentAccess(
+          request,
+          response,
+          studentId
+        )
+      ) {
+        return;
+      }
+
+      try {
+        const profile =
+          conversationStore.getLearnerProfile(
+            studentId
+          ).educationProfile;
+        const result = await analyzeMaterialBuffer({
+          buffer: request.body,
+          mimeType: request.header('X-Material-Type'),
+          fileName: decodeURIComponent(
+            request.header('X-Material-Name') ||
+              'learning-material'
+          ),
+          studentId,
+          profile,
+          subject: request.header('X-Material-Subject'),
+          store: curriculumStore,
+        });
+
+        return response.status(201).json({
+          result,
+          requestId: request.requestId,
+        });
+      } catch (error) {
+        return response
+          .status(Number(error.status) || 500)
+          .json({
+            error: error.message,
+            code:
+              error.code || 'MATERIAL_ANALYSIS_FAILED',
+            requestId: request.requestId,
+          });
+      }
+    }
+  );
 
   app.post('/api/documents/search', (request, response) => {
     const query = String(request.body?.query || '').trim();
@@ -544,6 +824,91 @@ function createApp(options = {}) {
       });
     }
   });
+
+  app.get(
+    '/api/documents/:documentId/regions',
+    (request, response) => {
+      const studentId =
+        typeof request.query.studentId === 'string'
+          ? request.query.studentId.trim()
+          : '';
+      const page = Number(request.query.page) || 0;
+      const available = curriculumStore
+        .listDocuments(
+          500,
+          curriculumAccessForStudent(studentId)
+        )
+        .some(
+          (document) =>
+            document.id === request.params.documentId
+        );
+
+      if (!available) {
+        return response.status(404).json({
+          error: 'The learning document was not found.',
+          code: 'DOCUMENT_NOT_FOUND',
+          requestId: request.requestId,
+        });
+      }
+
+      return response.json({
+        documentId: request.params.documentId,
+        page,
+        regions: curriculumStore.listEvidenceRegions(
+          request.params.documentId,
+          page,
+          studentId
+        ),
+        requestId: request.requestId,
+      });
+    }
+  );
+
+  app.put(
+    '/api/documents/:documentId/regions/:regionId/correction',
+    (request, response) => {
+      const studentId = String(
+        request.body?.studentId || ''
+      ).trim();
+
+      try {
+        const available = curriculumStore
+          .listDocuments(
+            500,
+            curriculumAccessForStudent(studentId)
+          )
+          .some(
+            (document) =>
+              document.id === request.params.documentId
+          );
+
+        if (!available) {
+          return response.status(404).json({
+            error: 'The learning document was not found.',
+            code: 'DOCUMENT_NOT_FOUND',
+            requestId: request.requestId,
+          });
+        }
+
+        return response.json({
+          ok: true,
+          region: curriculumStore.correctEvidenceRegion({
+            documentId: request.params.documentId,
+            regionId: request.params.regionId,
+            studentId,
+            text: request.body?.text,
+          }),
+          requestId: request.requestId,
+        });
+      } catch (error) {
+        return response.status(errorStatus(error)).json({
+          error: error.message,
+          code: errorCode(error),
+          requestId: request.requestId,
+        });
+      }
+    }
+  );
 
   app.get('/api/conversations', (request, response) => {
     const studentId =
@@ -606,7 +971,8 @@ function createApp(options = {}) {
       const { tutorResult, metrics } = await askTutor(
         context.requestData,
         controller.signal,
-        context.history
+        context.history,
+        modelProvider
       );
       const tutorMessage = conversationStore.saveMessage({
         conversationId: context.conversation.id,
@@ -639,14 +1005,17 @@ function createApp(options = {}) {
         learnerProfile,
         citations,
         metadata: {
-          provider: 'ollama',
-          model: config.ollamaModel,
+          identity: modelIdentity.id,
+          provider: modelRuntime.provider,
+          model: modelRuntime.model,
           mode: parsedRequest.data.mode,
           language: parsedRequest.data.language,
           grade: parsedRequest.data.grade,
           subject: context.pedagogyPlan.subject,
           lessonState:
             context.pedagogyPlan.lessonState,
+          tutorDecision:
+            context.pedagogyPlan.decision,
           generatedAt: new Date().toISOString(),
           requestId: request.requestId,
           conversationId: context.conversation.id,
@@ -675,7 +1044,7 @@ function createApp(options = {}) {
 
       return response.status(status).json({
         error:
-          error instanceof OllamaError ||
+          isModelProviderError(error) ||
           error instanceof ConversationStoreError ||
           error instanceof CurriculumStoreError ||
           error instanceof SchoolStoreError
@@ -729,10 +1098,13 @@ function createApp(options = {}) {
         type: 'start',
         requestId: request.requestId,
         conversationId: context.conversation.id,
-        model: config.ollamaModel,
+        identity: modelIdentity.id,
+        model: modelRuntime.model,
         subject: context.pedagogyPlan.subject,
         lessonState:
           context.pedagogyPlan.lessonState,
+        tutorDecision:
+          context.pedagogyPlan.decision,
         grounded:
           context.curriculumEvidence.length > 0,
       });
@@ -746,7 +1118,8 @@ function createApp(options = {}) {
             content: token,
           });
         },
-        context.history
+        context.history,
+        modelProvider
       );
 
       const learningTwin =
@@ -780,12 +1153,15 @@ function createApp(options = {}) {
         learnerProfile,
         citations,
         metadata: {
-          provider: 'ollama',
-          model: config.ollamaModel,
+          identity: modelIdentity.id,
+          provider: modelRuntime.provider,
+          model: modelRuntime.model,
           requestId: request.requestId,
           subject: context.pedagogyPlan.subject,
           lessonState:
             context.pedagogyPlan.lessonState,
+          tutorDecision:
+            context.pedagogyPlan.decision,
           grounding: citations.length > 0
             ? 'curriculum'
             : 'model-only',

@@ -317,6 +317,34 @@ function createCurriculumStore(
       UNIQUE (document_id, page_number, chunk_index)
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS curriculum_regions (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL,
+      page_number INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      content TEXT NOT NULL,
+      original_content TEXT NOT NULL,
+      bounding_box_json TEXT NOT NULL,
+      confidence REAL NOT NULL,
+      source TEXT NOT NULL,
+      safety_findings_json TEXT NOT NULL,
+      FOREIGN KEY (document_id)
+        REFERENCES curriculum_documents(id)
+        ON DELETE CASCADE,
+      UNIQUE (document_id, id)
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS curriculum_region_corrections (
+      region_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      corrected_content TEXT NOT NULL,
+      corrected_at TEXT NOT NULL,
+      PRIMARY KEY (region_id, student_id),
+      FOREIGN KEY (region_id)
+        REFERENCES curriculum_regions(id)
+        ON DELETE CASCADE
+    ) STRICT;
+
     CREATE TABLE IF NOT EXISTS curriculum_document_entitlements (
       document_id TEXT NOT NULL,
       principal_type TEXT NOT NULL
@@ -359,6 +387,9 @@ function createCurriculumStore(
 
     CREATE INDEX IF NOT EXISTS curriculum_chunks_document
       ON curriculum_chunks(document_id, page_number, chunk_index);
+
+    CREATE INDEX IF NOT EXISTS curriculum_regions_document
+      ON curriculum_regions(document_id, page_number);
 
     CREATE INDEX IF NOT EXISTS curriculum_entitlements_principal
       ON curriculum_document_entitlements(
@@ -424,6 +455,50 @@ function createCurriculumStore(
         content
       ) VALUES (?, ?, ?, ?, ?)
     `),
+    insertRegion: database.prepare(`
+      INSERT INTO curriculum_regions (
+        id,
+        document_id,
+        page_number,
+        kind,
+        content,
+        original_content,
+        bounding_box_json,
+        confidence,
+        source,
+        safety_findings_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    listRegions: database.prepare(`
+      SELECT
+        r.*,
+        c.corrected_content,
+        c.corrected_at
+      FROM curriculum_regions AS r
+      LEFT JOIN curriculum_region_corrections AS c
+        ON c.region_id = r.id
+        AND c.student_id = ?
+      WHERE r.document_id = ?
+        AND (? = 0 OR r.page_number = ?)
+      ORDER BY r.page_number, r.id
+    `),
+    regionById: database.prepare(`
+      SELECT *
+      FROM curriculum_regions
+      WHERE id = ? AND document_id = ?
+    `),
+    upsertRegionCorrection: database.prepare(`
+      INSERT INTO curriculum_region_corrections (
+        region_id,
+        student_id,
+        corrected_content,
+        corrected_at
+      ) VALUES (?, ?, ?, ?)
+      ON CONFLICT(region_id, student_id)
+      DO UPDATE SET
+        corrected_content = excluded.corrected_content,
+        corrected_at = excluded.corrected_at
+    `),
     insertFtsChunk: database.prepare(`
       INSERT INTO curriculum_chunks_fts (
         chunk_id,
@@ -476,6 +551,45 @@ function createCurriculumStore(
         )
       ORDER BY d.updated_at DESC
       LIMIT ?
+    `),
+    listTrainingSources: database.prepare(`
+      SELECT
+        c.id AS chunk_id,
+        c.document_id,
+        c.page_number,
+        c.chunk_index,
+        c.content,
+        d.title,
+        d.curriculum,
+        d.grade,
+        d.subject,
+        d.language,
+        d.rights,
+        d.sha256
+      FROM curriculum_chunks AS c
+      JOIN curriculum_documents AS d
+        ON d.id = c.document_id
+      WHERE d.status = 'ready'
+        AND d.rights IN ('public-domain', 'open-license')
+      ORDER BY
+        d.subject,
+        d.grade,
+        d.sha256,
+        c.page_number,
+        c.chunk_index
+      LIMIT ?
+    `),
+    trainingInventory: database.prepare(`
+      SELECT
+        d.rights,
+        COUNT(DISTINCT d.id) AS document_count,
+        COUNT(c.id) AS chunk_count
+      FROM curriculum_documents AS d
+      LEFT JOIN curriculum_chunks AS c
+        ON c.document_id = d.id
+      WHERE d.status = 'ready'
+      GROUP BY d.rights
+      ORDER BY d.rights
     `),
     search: database.prepare(`
       SELECT
@@ -582,6 +696,9 @@ function createCurriculumStore(
         pageNumber:
           Number(page.pageNumber) || index + 1,
         text: cleanText(page.text),
+        regions: Array.isArray(page.regions)
+          ? page.regions
+          : [],
       }))
       .filter((page) => page.text);
 
@@ -709,6 +826,45 @@ function createCurriculumStore(
           page.pageNumber,
           page.text
         );
+
+        for (const region of page.regions) {
+          const content = cleanText(region.text);
+
+          if (!content) {
+            continue;
+          }
+
+          statements.insertRegion.run(
+            limitedText(
+              region.regionId,
+              randomUUID(),
+              180
+            ),
+            documentId,
+            page.pageNumber,
+            limitedText(region.kind, 'text', 40),
+            content,
+            cleanText(region.originalText) || content,
+            JSON.stringify(
+              region.boundingBox || {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+              }
+            ),
+            Math.max(
+              0,
+              Math.min(1, Number(region.confidence) || 0)
+            ),
+            limitedText(region.source, 'ocr', 40),
+            JSON.stringify(
+              Array.isArray(region.safetyFindings)
+                ? region.safetyFindings
+                : []
+            )
+          );
+        }
       }
 
       for (const chunk of chunks) {
@@ -767,6 +923,39 @@ function createCurriculumStore(
         Math.min(500, Math.max(1, limit))
       )
       .map(mapDocument);
+  }
+
+  function listTrainingSources(limit = 100_000) {
+    return statements.listTrainingSources
+      .all(Math.min(1_000_000, Math.max(1, limit)))
+      .map((row) => ({
+        chunkId: row.chunk_id,
+        documentId: row.document_id,
+        documentSha256: row.sha256,
+        title: row.title,
+        curriculum: row.curriculum,
+        grade: row.grade,
+        subject: row.subject,
+        language: row.language,
+        rights: row.rights,
+        page: row.page_number,
+        chunkIndex: row.chunk_index,
+        content: row.content,
+      }));
+  }
+
+  function getTrainingInventory() {
+    return statements.trainingInventory
+      .all()
+      .map((row) => ({
+        rights: row.rights,
+        documentCount: row.document_count,
+        chunkCount: row.chunk_count,
+        trainingEligible: [
+          'public-domain',
+          'open-license',
+        ].includes(row.rights),
+      }));
   }
 
   function findDocumentByHash(sha256) {
@@ -897,6 +1086,88 @@ function createCurriculumStore(
       }));
   }
 
+  function listEvidenceRegions(
+    documentId,
+    pageNumber = 0,
+    studentId = ''
+  ) {
+    return statements.listRegions
+      .all(
+        limitedText(studentId, '', 120),
+        limitedText(documentId, '', 180),
+        Math.max(0, Number(pageNumber) || 0),
+        Math.max(0, Number(pageNumber) || 0)
+      )
+      .map((row) => ({
+        regionId: row.id,
+        documentId: row.document_id,
+        pageNumber: row.page_number,
+        kind: row.kind,
+        text: row.corrected_content || row.content,
+        originalText: row.original_content,
+        boundingBox: JSON.parse(row.bounding_box_json),
+        confidence: row.confidence,
+        source: row.source,
+        safetyFindings: JSON.parse(
+          row.safety_findings_json
+        ),
+        correction: row.corrected_content
+          ? {
+              correctedBy: studentId,
+              correctedAt: row.corrected_at,
+            }
+          : null,
+      }));
+  }
+
+  function correctEvidenceRegion({
+    documentId,
+    regionId,
+    studentId,
+    text,
+  }) {
+    const normalizedStudentId = limitedText(
+      studentId,
+      '',
+      120
+    );
+    const correctedText = cleanText(text);
+
+    if (!normalizedStudentId || !correctedText) {
+      throw new CurriculumStoreError(
+        'A student and corrected region text are required.',
+        'REGION_CORRECTION_REQUIRED',
+        400
+      );
+    }
+
+    const region = statements.regionById.get(
+      limitedText(regionId, '', 180),
+      limitedText(documentId, '', 180)
+    );
+
+    if (!region) {
+      throw new CurriculumStoreError(
+        'The OCR evidence region was not found.',
+        'REGION_NOT_FOUND',
+        404
+      );
+    }
+
+    statements.upsertRegionCorrection.run(
+      region.id,
+      normalizedStudentId,
+      correctedText,
+      new Date().toISOString()
+    );
+
+    return listEvidenceRegions(
+      region.document_id,
+      region.page_number,
+      normalizedStudentId
+    ).find((item) => item.regionId === region.id);
+  }
+
   function close() {
     if (database.isOpen) {
       database.close();
@@ -905,11 +1176,15 @@ function createCurriculumStore(
 
   return {
     close,
+    correctEvidenceRegion,
     findDocumentByHash,
     getDocumentEntitlements,
     grantDocumentEntitlements,
+    getTrainingInventory,
     importDocument,
+    listEvidenceRegions,
     listDocuments,
+    listTrainingSources,
     search,
   };
 }

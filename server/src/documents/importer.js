@@ -136,16 +136,21 @@ async function importPdfBuffer({
       const ocrByPage = new Map(
         ocrResult.pages.map((page) => [
           page.pageNumber,
-          page.text,
+          page,
         ])
       );
 
-      pages = pages.map((page) => ({
-        pageNumber: page.pageNumber,
-        text:
-          ocrByPage.get(page.pageNumber) ??
-          page.text,
-      }));
+      pages = pages.map((page) => {
+        const recognized = ocrByPage.get(
+          page.pageNumber
+        );
+
+        return {
+          pageNumber: page.pageNumber,
+          text: recognized?.text ?? page.text,
+          regions: recognized?.regions || [],
+        };
+      });
       ocrPageCount = ocrResult.pages.length;
     }
 

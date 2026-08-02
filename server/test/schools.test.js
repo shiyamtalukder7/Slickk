@@ -25,6 +25,11 @@ test('school directory imports and searches verified institutions', (context) =>
 
   assert.equal(store.status().schoolCount, 1);
   assert.equal(
+    store.status().banbeisInstitutionCount,
+    1
+  );
+  assert.equal(store.status().banbeisDistrictCount, 1);
+  assert.equal(
     store.search('Mafiz')[0].eiin,
     '100022'
   );

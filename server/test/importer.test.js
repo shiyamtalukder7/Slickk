@@ -60,6 +60,23 @@ test('PDF importer OCRs only pages without meaningful text', async () => {
           {
             pageNumber: 2,
             text: 'Recognized subtraction lesson.',
+            regions: [
+              {
+                regionId: 'page-2-region-1',
+                pageNumber: 2,
+                kind: 'text',
+                text: 'Recognized subtraction lesson.',
+                boundingBox: {
+                  x: 0.1,
+                  y: 0.2,
+                  width: 0.7,
+                  height: 0.1,
+                },
+                confidence: 0.92,
+                source: 'ocr',
+                safetyFindings: [],
+              },
+            ],
           },
         ],
       };
@@ -92,6 +109,10 @@ test('PDF importer OCRs only pages without meaningful text', async () => {
   assert.match(
     importedInput.pages[1].text,
     /Recognized/
+  );
+  assert.equal(
+    importedInput.pages[1].regions[0].regionId,
+    'page-2-region-1'
   );
   assert.equal(result.ocrPageCount, 1);
   assert.equal(result.sha256, 'pdf-hash');

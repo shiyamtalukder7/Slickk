@@ -8,6 +8,9 @@ const {
   PdfDocumentError,
   validatePdfBuffer,
 } = require('./pdf');
+const {
+  regionsFromRecognition,
+} = require('./analysis');
 
 const DEFAULT_OCR_WIDTH = 1600;
 
@@ -168,6 +171,10 @@ async function ocrPdfPages(
         text: String(
           recognition?.data?.text || ''
         ).trim(),
+        regions: regionsFromRecognition(
+          recognition,
+          pageNumber
+        ),
       });
       onProgress({
         phase: 'recognizing',
@@ -200,10 +207,51 @@ async function ocrPdfPages(
   }
 }
 
+async function ocrImageBuffer(
+  buffer,
+  {
+    languages = ['eng'],
+    workerFactory = defaultWorkerFactory,
+  } = {}
+) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new OcrDocumentError(
+      'The image file is empty.',
+      'EMPTY_IMAGE',
+      400
+    );
+  }
+
+  let worker;
+
+  try {
+    worker = await workerFactory(languages, () => {});
+    const recognition = await worker.recognize(buffer);
+
+    return {
+      pageNumber: 1,
+      text: String(recognition?.data?.text || '').trim(),
+      regions: regionsFromRecognition(recognition, 1),
+    };
+  } catch (error) {
+    if (error instanceof OcrDocumentError) {
+      throw error;
+    }
+
+    throw new OcrDocumentError(
+      'The image could not be processed by the local OCR engine.',
+      'IMAGE_OCR_FAILED'
+    );
+  } finally {
+    await worker?.terminate?.();
+  }
+}
+
 module.exports = {
   DEFAULT_OCR_WIDTH,
   OcrDocumentError,
   defaultWorkerFactory,
   ocrLanguagesFromLabel,
+  ocrImageBuffer,
   ocrPdfPages,
 };

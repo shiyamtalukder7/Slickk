@@ -61,14 +61,38 @@ function resolveDatabasePath() {
     : path.resolve(serverRoot, configuredPath);
 }
 
+function readApiCredentials() {
+  const {
+    parseApiCredentials,
+  } = require('./security/api');
+
+  return parseApiCredentials(
+    process.env.SLICKK_API_KEYS_JSON || ''
+  );
+}
+
 const config = Object.freeze({
   nodeEnv: process.env.NODE_ENV?.trim() || 'development',
   port: readInteger('PORT', 3000, 1, 65535),
+  modelProvider:
+    process.env.SLICKK_MODEL_PROVIDER?.trim().toLowerCase() ||
+    'ollama',
+  modelUrl: (
+    process.env.SLICKK_MODEL_URL?.trim() ||
+    process.env.OLLAMA_URL?.trim() ||
+    'http://127.0.0.1:11434'
+  ).replace(/\/+$/, ''),
+  modelName:
+    process.env.SLICKK_MODEL_NAME?.trim() ||
+    process.env.OLLAMA_MODEL?.trim() ||
+    'slickk-tutor-3b-backup',
   ollamaUrl: (
+    process.env.SLICKK_MODEL_URL?.trim() ||
     process.env.OLLAMA_URL?.trim() ||
     'http://127.0.0.1:11434'
   ).replace(/\/+$/, ''),
   ollamaModel:
+    process.env.SLICKK_MODEL_NAME?.trim() ||
     process.env.OLLAMA_MODEL?.trim() ||
     'slickk-tutor-3b-backup',
   ollamaThink: readBoolean('OLLAMA_THINK', false),
@@ -99,12 +123,20 @@ const config = Object.freeze({
     30
   ),
   corsOrigins: readOrigins(),
+  apiCredentials: readApiCredentials(),
+  rateLimitPerMinute: readInteger(
+    'RATE_LIMIT_PER_MINUTE',
+    120,
+    10,
+    5000
+  ),
   databasePath: resolveDatabasePath(),
 });
 
 module.exports = {
   config,
   readBoolean,
+  readApiCredentials,
   readInteger,
   resolveDatabasePath,
 };

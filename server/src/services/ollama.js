@@ -7,6 +7,7 @@ class OllamaError extends Error {
     this.code = code;
     this.status = status;
     this.details = details;
+    this.isModelProviderError = true;
   }
 }
 
@@ -103,7 +104,7 @@ function translateFetchError(error, timedOut) {
   }
 
   return new OllamaError(
-    'Slickk could not connect to Ollama.',
+    'Slickk LLM could not connect to its local model runtime.',
     'OLLAMA_UNREACHABLE',
     503,
     { cause: error?.message || String(error) }
@@ -126,8 +127,8 @@ async function parseErrorResponse(response) {
 
   return new OllamaError(
     modelMissing
-      ? `The Ollama model "${config.ollamaModel}" is not installed.`
-      : message || 'Ollama could not complete the request.',
+      ? `The configured local model "${config.modelName}" is not installed.`
+      : message || 'The local model runtime could not complete the request.',
     modelMissing ? 'MODEL_NOT_FOUND' : 'OLLAMA_RESPONSE_ERROR',
     modelMissing ? 503 : 502,
     { ollamaStatus: response.status }
@@ -185,8 +186,8 @@ function normalizeModelNames(data) {
 function isConfiguredModelInstalled(modelNames) {
   return modelNames.some(
     (modelName) =>
-      modelName === config.ollamaModel ||
-      modelName.startsWith(`${config.ollamaModel}:`)
+      modelName === config.modelName ||
+      modelName.startsWith(`${config.modelName}:`)
   );
 }
 
@@ -204,7 +205,7 @@ async function checkOllamaHealth() {
 
 function tutorRequestBody(messages, stream, format) {
   return {
-    model: config.ollamaModel,
+    model: config.modelName,
     stream,
     think: config.ollamaThink,
     ...(format ? { format } : {}),

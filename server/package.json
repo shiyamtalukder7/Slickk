@@ -2,7 +2,7 @@
   "name": "server",
   "version": "1.0.0",
   "private": true,
-  "description": "Local Ollama intelligence gateway for the Slickk learning app.",
+  "description": "Private personalized-teaching intelligence core for Slickk LLM.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -10,12 +10,15 @@
     "catalog": "node scripts/catalog.js",
     "import:pdf": "node scripts/import-pdf.js",
     "import:schools": "node scripts/import-schools.js",
+    "import:schools:2024": "node scripts/import-banbeis-workbooks.js",
+    "training:plan": "node scripts/training-corpus.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check index.js && node --check scripts/catalog.js && node --check scripts/import-pdf.js && node --check scripts/import-schools.js && node --check src/app.js && node --check src/catalog/banbeis.js && node --check src/catalog/english-medium.js && node --check src/catalog/nctb-bootstrap.js && node --check src/catalog/nctb.js && node --check src/catalog/registry.js && node --check src/catalog/sync.js && node --check src/config.js && node --check src/contracts/tutor.js && node --check src/documents/importer.js && node --check src/documents/ocr.js && node --check src/documents/pdf.js && node --check src/learning/mastery.js && node --check src/pedagogy/orchestrator.js && node --check src/profiles/student.js && node --check src/prompts/tutor.js && node --check src/services/ollama.js && node --check src/services/tutor.js && node --check src/storage/conversations.js && node --check src/storage/curriculum.js && node --check src/storage/schools.js && node --test test/*.test.js"
+    "check": "node --check index.js && node --check scripts/catalog.js && node --check scripts/import-banbeis-workbooks.js && node --check scripts/import-pdf.js && node --check scripts/import-schools.js && node --check scripts/training-corpus.js && node --check src/agents/policy.js && node --check src/agents/tutor-decision.js && node --check src/app.js && node --check src/assessment/scoring.js && node --check src/catalog/banbeis-workbook.js && node --check src/catalog/banbeis.js && node --check src/catalog/english-medium-schools.js && node --check src/catalog/english-medium.js && node --check src/catalog/ipemis.js && node --check src/catalog/nctb-bootstrap.js && node --check src/catalog/nctb.js && node --check src/catalog/registry.js && node --check src/catalog/sync.js && node --check src/config.js && node --check src/contracts/tutor.js && node --check src/documents/analysis.js && node --check src/documents/importer.js && node --check src/documents/material.js && node --check src/documents/ocr.js && node --check src/documents/pdf.js && node --check src/governance/events.js && node --check src/learning/mastery.js && node --check src/learning/recommendations.js && node --check src/models/provider.js && node --check src/models/runtime.js && node --check src/multimodal/evidence.js && node --check src/pedagogy/method-registry.js && node --check src/pedagogy/orchestrator.js && node --check src/pedagogy/question-taxonomy.js && node --check src/profiles/student.js && node --check src/prompts/tutor.js && node --check src/schools/tenancy.js && node --check src/security/api.js && node --check src/services/ollama.js && node --check src/services/tutor.js && node --check src/storage/conversations.js && node --check src/storage/curriculum.js && node --check src/storage/schools.js && node --check src/study/tools.js && node --check src/training/corpus.js && node --check src/training/registry.js && node --check src/voice/session.js && node --test test/*.test.js"
   },
   "keywords": [
     "slickk",
-    "ollama",
+    "slickk-llm",
+    "local-ai",
     "education"
   ],
   "license": "ISC",
@@ -27,6 +30,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "fflate": "^0.8.2",
     "pdf-parse": "^2.4.5",
     "tesseract.js": "^7.0.0",
     "ws": "^8.21.1",

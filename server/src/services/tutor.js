@@ -7,9 +7,8 @@ const {
   buildTutorSystemPrompt,
 } = require('../prompts/tutor');
 const {
-  generateTutorResult,
-  streamTutorResult,
-} = require('./ollama');
+  defaultModelProvider,
+} = require('../models/provider');
 
 function normalizeHistory(recentMessages) {
   return recentMessages.map((message) => ({
@@ -37,9 +36,10 @@ function buildMessages(requestData, history, streaming) {
 async function askTutor(
   requestData,
   signal,
-  history = requestData.recentMessages
+  history = requestData.recentMessages,
+  modelProvider = defaultModelProvider
 ) {
-  const result = await generateTutorResult({
+  const result = await modelProvider.generate({
     messages: buildMessages(requestData, history, false),
     format: TUTOR_RESULT_JSON_SCHEMA,
     signal,
@@ -55,9 +55,10 @@ async function streamTutor(
   requestData,
   signal,
   onToken,
-  history = requestData.recentMessages
+  history = requestData.recentMessages,
+  modelProvider = defaultModelProvider
 ) {
-  return streamTutorResult({
+  return modelProvider.stream({
     messages: buildMessages(requestData, history, true),
     signal,
     onToken,

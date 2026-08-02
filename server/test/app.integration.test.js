@@ -228,7 +228,11 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
 
   assert.equal(optionsResponse.status, 200);
   assert.equal(options.grades.length, 12);
-  assert.equal(options.schoolDirectory.schoolCount, 1);
+  assert.equal(options.schoolDirectory.schoolCount, 119);
+  assert.equal(
+    options.schoolDirectory.englishMediumSchoolCount,
+    118
+  );
 
   const pathwaysResponse = await fetch(
     `http://127.0.0.1:${gatewayPort}/api/curricula/english-medium`
@@ -296,6 +300,46 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
 
   assert.equal(publicDocuments.documents.length, 1);
   assert.equal(studentDocuments.documents.length, 2);
+
+  const materialResponse = await fetch(
+    `http://127.0.0.1:${gatewayPort}/api/students/local-student/materials/analyze`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-Material-Name': encodeURIComponent(
+          'science-notes.txt'
+        ),
+        'X-Material-Type': 'text/plain',
+      },
+      body: Buffer.from(
+        'Evaporation changes liquid water into water vapour.'
+      ),
+    }
+  );
+  const material = await materialResponse.json();
+
+  assert.equal(materialResponse.status, 201);
+  assert.equal(material.result.kind, 'text');
+  assert.equal(material.result.pageCount, 1);
+  assert.match(
+    material.result.previewText,
+    /Evaporation/
+  );
+  assert.equal(
+    materialResponse.headers.get(
+      'x-content-type-options'
+    ),
+    'nosniff'
+  );
+
+  const privateDocumentsResponse = await fetch(
+    `http://127.0.0.1:${gatewayPort}/api/documents?studentId=local-student`
+  );
+  const privateDocuments =
+    await privateDocumentsResponse.json();
+
+  assert.equal(privateDocuments.documents.length, 3);
 
   const tutorResponse = await fetch(
     `http://127.0.0.1:${gatewayPort}/api/tutor`,

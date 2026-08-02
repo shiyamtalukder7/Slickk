@@ -121,6 +121,37 @@ function createSchoolStore(
         MAX(updated_at) AS updated_at
       FROM schools
     `),
+    coverage: database.prepare(`
+      SELECT
+        SUM(
+          CASE
+            WHEN source LIKE 'BANBEIS%' THEN 1
+            ELSE 0
+          END
+        ) AS banbeis_count,
+        COUNT(
+          DISTINCT CASE
+            WHEN source LIKE 'BANBEIS%' THEN LOWER(district)
+            ELSE NULL
+          END
+        ) AS banbeis_district_count,
+        SUM(
+          CASE
+            WHEN source = 'DPE IPEMIS primary-school directory'
+              THEN 1
+            ELSE 0
+          END
+        ) AS primary_cached_count,
+        SUM(
+          CASE
+            WHEN source =
+              'Dhaka Education Board English-medium registry'
+              THEN 1
+            ELSE 0
+          END
+        ) AS english_medium_count
+      FROM schools
+    `),
   };
 
   function importSchools(schools) {
@@ -211,10 +242,23 @@ function createSchoolStore(
 
   function status() {
     const row = statements.count.get();
+    const coverage = statements.coverage.get();
+    const banbeisDistrictCount =
+      Number(coverage.banbeis_district_count) || 0;
 
     return {
       schoolCount: Number(row.school_count) || 0,
-      districtCount: Number(row.district_count) || 0,
+      districtCount:
+        banbeisDistrictCount ||
+        Number(row.district_count) ||
+        0,
+      banbeisInstitutionCount:
+        Number(coverage.banbeis_count) || 0,
+      banbeisDistrictCount,
+      primaryCachedCount:
+        Number(coverage.primary_cached_count) || 0,
+      englishMediumSchoolCount:
+        Number(coverage.english_medium_count) || 0,
       updatedAt: row.updated_at || null,
       manualSchoolEntrySupported: true,
     };
