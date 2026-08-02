@@ -508,9 +508,9 @@ export default function LearningTwinScreen() {
             </Text>
 
             <Text style={styles.futureDescription}>
-              This first engine does not call Gemini, OpenAI or another AI API.
-              Later we will connect it to Slickk’s on-device model, lesson
-              history and permanent student database.
+              Slickk’s Learning Twin runs privately in the app and local
+              server. Its model runtime is replaceable and may later become
+              an evaluated Slickk-trained model.
             </Text>
           </View>
         </View>
