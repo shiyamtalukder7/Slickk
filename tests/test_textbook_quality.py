@@ -135,6 +135,125 @@ class TextbookQualityTests(unittest.TestCase):
             issue_codes,
         )
 
+    def test_arabic_bidi_marks_are_allowed(
+        self,
+    ) -> None:
+        text = (
+            "\u09ac\u09be\u0982\u09b2\u09be "
+            "\u09aa\u09be\u09a0\u09cd\u09af\u09ac\u0987 "
+            "\u200f"
+            "\u0627\u0644\u0639\u0631\u0628\u064a\u0629"
+            "\u200e "
+            "\u09ad\u09be\u09b7\u09be\u09b0 "
+            "\u09aa\u09be\u09a0\u0964 "
+        ) * 6
+
+        report = score_chunk(
+            {
+                "id": "arabic-bidi-1",
+                "page_start": 1,
+                "page_end": 1,
+                "text": text,
+            },
+            ocr_language="ara+ben+eng",
+        )
+
+        issue_codes = {
+            issue["code"]
+            for issue in report["issues"]
+        }
+
+        self.assertEqual(
+            report["quality_band"],
+            "low-risk",
+        )
+        self.assertNotIn(
+            "unexpected-control-character",
+            issue_codes,
+        )
+        self.assertGreater(
+            report[
+                "allowed_bidi_control_characters"
+            ],
+            0,
+        )
+        self.assertEqual(
+            report[
+                "unexpected_control_characters"
+            ],
+            0,
+        )
+
+    def test_bidi_mark_is_flagged_without_arabic_ocr(
+        self,
+    ) -> None:
+        text = (
+            "English textbook content contains "
+            "\u200f an unexpected direction mark. "
+        ) * 5
+
+        report = score_chunk(
+            {
+                "id": "english-bidi-1",
+                "page_start": 1,
+                "page_end": 1,
+                "text": text,
+            },
+            ocr_language="eng",
+        )
+
+        issue_codes = {
+            issue["code"]
+            for issue in report["issues"]
+        }
+
+        self.assertIn(
+            "unexpected-control-character",
+            issue_codes,
+        )
+        self.assertGreater(
+            report[
+                "unexpected_control_characters"
+            ],
+            0,
+        )
+
+    def test_latin_compatibility_ligature_is_valid(
+        self,
+    ) -> None:
+        text = (
+            "The authority should take "
+            "\ufb06eps to protect the environment. "
+        ) * 5
+
+        report = score_chunk(
+            {
+                "id": "ligature-1",
+                "page_start": 1,
+                "page_end": 1,
+                "text": text,
+            },
+            ocr_language="eng",
+        )
+
+        issue_codes = {
+            issue["code"]
+            for issue in report["issues"]
+        }
+
+        self.assertEqual(
+            report["quality_band"],
+            "low-risk",
+        )
+        self.assertEqual(
+            report["mixed_script_tokens"],
+            [],
+        )
+        self.assertNotIn(
+            "mixed-script-token",
+            issue_codes,
+        )
+
     def test_scoring_does_not_modify_payload(
         self,
     ) -> None:

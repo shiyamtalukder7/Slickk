@@ -24,6 +24,55 @@ DEFAULT_REPORT_FILE = Path(
 )
 
 
+_BASE_ALLOWED_CONTROLS = {
+    "\n",
+    "\r",
+    "\t",
+    "\u200c",
+    "\u200d",
+}
+
+# Standard Unicode direction controls used when Arabic and
+# left-to-right text appear together. They affect display
+# direction but do not represent corrupt textbook content.
+_ARABIC_BIDI_CONTROLS = {
+    "\u061c",
+    "\u200e",
+    "\u200f",
+    "\u202a",
+    "\u202b",
+    "\u202c",
+    "\u202d",
+    "\u202e",
+    "\u2066",
+    "\u2067",
+    "\u2068",
+    "\u2069",
+}
+
+
+def _is_latin_text(value: str) -> bool:
+    """Return whether every letter belongs to Latin."""
+
+    if not value:
+        return False
+
+    for character in value:
+        code_point = ord(character)
+
+        if not character.isalpha():
+            return False
+
+        if not (
+            0x0041 <= code_point <= 0x005A
+            or 0x0061 <= code_point <= 0x007A
+            or 0x00C0 <= code_point <= 0x024F
+        ):
+            return False
+
+    return True
+
+
 def _letter_script(character: str) -> str:
     """Return the broad script family for a letter."""
 
@@ -33,6 +82,20 @@ def _letter_script(character: str) -> str:
         0x0041 <= code_point <= 0x005A
         or 0x0061 <= code_point <= 0x007A
         or 0x00C0 <= code_point <= 0x024F
+    ):
+        return "latin"
+
+    # Examples include the OCR/PDF ligatures ?, ?, ?,
+    # ?, ?, ? and ?. Classification uses a compatibility
+    # copy while the original textbook text remains unchanged.
+    compatibility_text = unicodedata.normalize(
+        "NFKC",
+        character,
+    )
+
+    if (
+        compatibility_text != character
+        and _is_latin_text(compatibility_text)
     ):
         return "latin"
 
@@ -107,6 +170,59 @@ def _orphan_mark_count(text: str) -> int:
     return orphan_marks
 
 
+def _unexpected_control_characters(
+    text: str,
+    *,
+    ocr_language: str,
+) -> list[str]:
+    """Return controls that are unsafe for the OCR context."""
+
+    languages = {
+        item.strip().casefold()
+        for item in ocr_language.split("+")
+        if item.strip()
+    }
+
+    allowed = set(_BASE_ALLOWED_CONTROLS)
+
+    if "ara" in languages:
+        allowed.update(
+            _ARABIC_BIDI_CONTROLS
+        )
+
+    return [
+        character
+        for character in text
+        if (
+            unicodedata.category(character)
+            in {"Cc", "Cf"}
+            and character not in allowed
+        )
+    ]
+
+
+def _allowed_bidi_control_count(
+    text: str,
+    *,
+    ocr_language: str,
+) -> int:
+    """Count accepted Arabic direction controls."""
+
+    languages = {
+        item.strip().casefold()
+        for item in ocr_language.split("+")
+        if item.strip()
+    }
+
+    if "ara" not in languages:
+        return 0
+
+    return sum(
+        character in _ARABIC_BIDI_CONTROLS
+        for character in text
+    )
+
+
 def score_chunk(
     chunk: dict[str, Any],
     *,
@@ -164,17 +280,22 @@ def score_chunk(
         else 0.0
     )
 
-    control_count = sum(
-        unicodedata.category(character)
-        in {"Cc", "Cf"}
-        and character not in {
-            "\n",
-            "\r",
-            "\t",
-            "\u200c",
-            "\u200d",
-        }
-        for character in text
+    unexpected_controls = (
+        _unexpected_control_characters(
+            text,
+            ocr_language=ocr_language,
+        )
+    )
+
+    control_count = len(
+        unexpected_controls
+    )
+
+    allowed_bidi_controls = (
+        _allowed_bidi_control_count(
+            text,
+            ocr_language=ocr_language,
+        )
     )
 
     orphan_marks = _orphan_mark_count(text)
@@ -375,6 +496,12 @@ def score_chunk(
         "script_counts": dict(script_counts),
         "unexpected_letters": len(
             unexpected_letters
+        ),
+        "unexpected_control_characters": (
+            control_count
+        ),
+        "allowed_bidi_control_characters": (
+            allowed_bidi_controls
         ),
         "unexpected_letter_ratio": round(
             unexpected_ratio,
