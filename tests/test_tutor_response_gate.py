@@ -157,6 +157,111 @@ class TutorResponseGateTests(unittest.TestCase):
             response,
         )
 
+    def test_ungrounded_model_answer_is_blocked(
+        self,
+    ) -> None:
+        metadata = {
+            "grounded": False,
+            "grade": "Class 7",
+            "topic": (
+                "Explain Bandana worship in simple "
+                "Class 7 language"
+            ),
+            "teaching_mode": "explain",
+            "language": "english",
+            "_verified_response": "",
+            "sources": [],
+        }
+
+        model_answer = (
+            "BANDAN WATERS IS A FUN DANCE OF THE "
+            "BRETHORN ORDER WITH ENHYDRATED PAPERS."
+        )
+
+        response, model_rejected = select_tutor_response(
+            model_answer,
+            metadata,
+        )
+
+        self.assertTrue(model_rejected)
+        self.assertEqual(
+            metadata.get("_response_mode_override"),
+            "source_required",
+        )
+        self.assertIn(
+            "upload the relevant textbook page",
+            response.lower(),
+        )
+        self.assertNotIn(
+            "enhydrated papers",
+            response.lower(),
+        )
+
+    def test_grounded_valid_answer_is_preserved(
+        self,
+    ) -> None:
+        metadata = {
+            "grounded": True,
+            "grade": "Class 7",
+            "topic": "Respiration",
+            "teaching_mode": "explain",
+            "language": "english",
+            "_verified_response": (
+                "Respiration releases energy from glucose. "
+                "What does respiration release?"
+            ),
+        }
+
+        model_answer = (
+            "Respiration is a chemical process inside living "
+            "cells that releases energy from glucose. Why do "
+            "living organisms need this energy?"
+        )
+
+        response, model_rejected = select_tutor_response(
+            model_answer,
+            metadata,
+        )
+
+        self.assertFalse(model_rejected)
+        self.assertEqual(
+            response,
+            model_answer,
+        )
+
+    def test_safe_ungrounded_source_request_is_preserved(
+        self,
+    ) -> None:
+        metadata = {
+            "grounded": False,
+            "grade": "Class 7",
+            "topic": "Unknown lesson",
+            "teaching_mode": "explain",
+            "language": "english",
+            "_verified_response": "",
+        }
+
+        safe_response = (
+            "I do not have a verified textbook passage "
+            "for that topic. Could you provide the "
+            "chapter or page?"
+        )
+
+        response, rejected = select_tutor_response(
+            safe_response,
+            metadata,
+        )
+
+        self.assertFalse(rejected)
+        self.assertEqual(
+            response,
+            safe_response,
+        )
+        self.assertEqual(
+            metadata.get("_response_mode_override"),
+            "source_required",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

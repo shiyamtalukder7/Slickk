@@ -503,11 +503,25 @@ class SlickkRequestHandler(BaseHTTPRequestHandler):
             tutor_metadata,
         )
 
-        tutor_metadata["response_mode"] = (
-            "verified_fallback"
-            if fallback_used
-            else "local_model"
+        response_mode_override = tutor_metadata.pop(
+            "_response_mode_override",
+            None,
         )
+
+        tutor_metadata["response_mode"] = (
+            response_mode_override
+            if isinstance(
+                response_mode_override,
+                str,
+            )
+            and response_mode_override.strip()
+            else (
+                "verified_fallback"
+                if fallback_used
+                else "local_model"
+            )
+        )
+
         tutor_metadata["model_answer_rejected"] = fallback_used
 
         self.send_json(

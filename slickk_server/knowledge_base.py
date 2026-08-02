@@ -347,7 +347,23 @@ def retrieve_knowledge(
     requested_curriculum_id = resolve_curriculum_id(
         curriculum
     )
-    requested_subject_id = resolve_subject_id(subject)
+
+    normalized_subject = normalize(subject)
+    generic_subject = normalized_subject in {
+        "general",
+        "general studies",
+        "general study",
+        "general-studies",
+        "all subjects",
+        "any subject",
+    }
+
+    requested_subject_id = (
+        ""
+        if generic_subject
+        else resolve_subject_id(subject)
+    )
+
     requested_level_id = resolve_level_id(grade)
     requested_language = normalize_language(language)
 
@@ -363,6 +379,57 @@ def retrieve_knowledge(
         )
     )
     search_terms = set(search_text.split())
+
+    relevance_stop_terms = {
+        "about",
+        "and",
+        "are",
+        "class",
+        "explain",
+        "for",
+        "from",
+        "give",
+        "grade",
+        "help",
+        "how",
+        "in",
+        "is",
+        "language",
+        "lesson",
+        "me",
+        "of",
+        "please",
+        "simple",
+        "simply",
+        "teach",
+        "tell",
+        "the",
+        "this",
+        "to",
+        "topic",
+        "what",
+        "why",
+        "with",
+    }
+
+    relevance_text = normalize(
+        " ".join(
+            [
+                topic,
+                query,
+            ]
+        )
+    )
+
+    relevance_terms = {
+        term
+        for term in relevance_text.split()
+        if len(term) >= 3
+        and term not in relevance_stop_terms
+    }
+
+    if generic_subject and not relevance_terms:
+        return []
 
     scored: list[tuple[int, dict[str, Any]]] = []
 
@@ -430,6 +497,28 @@ def retrieve_knowledge(
         )
 
         document_terms = set(document_text.split())
+
+        document_relevance_text = normalize(
+            " ".join(
+                [
+                    str(document.get("subject", "")),
+                    str(document.get("topic", "")),
+                    str(document.get("title", "")),
+                    " ".join(document.get("keywords", [])),
+                    " ".join(document.get("facts", [])),
+                ]
+            )
+        )
+
+        document_relevance_terms = set(
+            document_relevance_text.split()
+        )
+
+        relevance_overlap = len(
+            relevance_terms
+            & document_relevance_terms
+        )
+
         score = len(search_terms & document_terms)
 
         if (
@@ -465,6 +554,12 @@ def retrieve_knowledge(
             == document_curriculum_id
         ):
             score += 3
+
+        if (
+            generic_subject
+            and relevance_overlap == 0
+        ):
+            continue
 
         if score > 0:
             scored.append((score, document))

@@ -703,43 +703,217 @@ def model_response_is_low_quality(
     return False
 
 
+def build_source_required_response(
+    *,
+    topic: str,
+    grade: str,
+    language: str,
+) -> str:
+    """Return a safe response when approved lesson material is unavailable."""
+
+    normalized_language = language.strip().lower()
+    safe_topic = topic.strip() or "this topic"
+    safe_grade = grade.strip() or "your grade"
+
+    if (
+        "bangla" in normalized_language
+        or "?????" in normalized_language
+    ):
+        return (
+            f"??? ???????? ???????????? ???? {safe_topic} "
+            "?????? ???? ????? ???? ??????? ????????? "
+            "?????????? ?????? ?? ??????? ??? ????? ???? "
+            f"????? ??? ??? {safe_grade}-?? ?????? ??? "
+            "????? ???? ???? ?????? ????"
+        )
+
+    return (
+        f"I cannot verify {safe_topic} from approved lesson "
+        "materials yet. Please upload the relevant textbook "
+        "page, school notes, or worksheet. I will then explain "
+        f"it step by step in language suitable for {safe_grade}."
+    )
+
+
+def model_response_is_safe_source_request(
+    model_text: Any,
+) -> bool:
+    """Recognize a short refusal that requests trusted lesson material."""
+
+    if not isinstance(model_text, str):
+        return False
+
+    normalized = " ".join(
+        model_text.strip().lower().split()
+    )
+
+    if not normalized or len(normalized) > 800:
+        return False
+
+    english_uncertainty = (
+        normalized.startswith("i do not have"),
+        normalized.startswith("i don't have"),
+        normalized.startswith("i cannot verify"),
+        normalized.startswith("i can't verify"),
+        normalized.startswith("i am unable to verify"),
+        normalized.startswith("i'm unable to verify"),
+        normalized.startswith("there is no verified"),
+    )
+
+    english_source_terms = (
+        "textbook",
+        "chapter",
+        "page",
+        "school notes",
+        "worksheet",
+        "upload",
+        "provide",
+    )
+
+    bangla_uncertainty = (
+        "????? ???? ??????" in normalized
+        or "????? ??? ????? ??" in normalized
+        or "????? ??? ????? ???" in normalized
+    )
+
+    bangla_source_terms = (
+        "???????",
+        "??????",
+        "???",
+        "?????",
+    )
+
+    english_safe = (
+        any(english_uncertainty)
+        and any(
+            term in normalized
+            for term in english_source_terms
+        )
+    )
+
+    bangla_safe = (
+        bangla_uncertainty
+        and any(
+            term in normalized
+            for term in bangla_source_terms
+        )
+    )
+
+    return english_safe or bangla_safe
+
+
 def select_tutor_response(
     model_text: Any,
     tutor_metadata: dict[str, Any],
 ) -> tuple[str, bool]:
-    """Use the model response only when it passes basic quality checks."""
+    """Display only grounded or safely rejected tutor responses."""
 
     verified_response = tutor_metadata.pop(
         "_verified_response",
         None,
     )
 
-    if (
+    grounded = bool(
         tutor_metadata.get("grounded")
-        and model_response_is_low_quality(
-            model_text,
-            topic=str(tutor_metadata.get("topic", "")),
-            teaching_mode=str(
-                tutor_metadata.get("teaching_mode", "")
-            ),
-            language=str(
-                tutor_metadata.get("language", "")
-            ),
-            grounding_text=(
-                verified_response
-                if isinstance(verified_response, str)
-                else ""
-            ),
-        )
-        and isinstance(verified_response, str)
-        and verified_response.strip()
-    ):
-        return verified_response.strip(), True
+    )
 
-    if isinstance(model_text, str):
+    topic = str(
+        tutor_metadata.get("topic", "")
+    )
+
+    teaching_mode = str(
+        tutor_metadata.get("teaching_mode", "")
+    )
+
+    language = str(
+        tutor_metadata.get("language", "")
+    )
+
+    grade = str(
+        tutor_metadata.get("grade", "")
+    )
+
+    if not grounded:
+        tutor_metadata[
+            "_response_mode_override"
+        ] = "source_required"
+
+        if model_response_is_safe_source_request(
+            model_text
+        ):
+            return model_text.strip(), False
+
+        if (
+            isinstance(verified_response, str)
+            and verified_response.strip()
+        ):
+            return verified_response.strip(), True
+
+        return (
+            build_source_required_response(
+                topic=topic,
+                grade=grade,
+                language=language,
+            ),
+            True,
+        )
+
+    low_quality = model_response_is_low_quality(
+        model_text,
+        topic=topic,
+        teaching_mode=teaching_mode,
+        language=language,
+        grounding_text=(
+            verified_response
+            if isinstance(
+                verified_response,
+                str,
+            )
+            else ""
+        ),
+    )
+
+    if low_quality:
+        if (
+            isinstance(verified_response, str)
+            and verified_response.strip()
+        ):
+            return (
+                verified_response.strip(),
+                True,
+            )
+
+        tutor_metadata[
+            "_response_mode_override"
+        ] = "source_required"
+
+        return (
+            build_source_required_response(
+                topic=topic,
+                grade=grade,
+                language=language,
+            ),
+            True,
+        )
+
+    if (
+        isinstance(model_text, str)
+        and model_text.strip()
+    ):
         return model_text.strip(), False
 
-    return "", False
+    tutor_metadata[
+        "_response_mode_override"
+    ] = "source_required"
+
+    return (
+        build_source_required_response(
+            topic=topic,
+            grade=grade,
+            language=language,
+        ),
+        True,
+    )
 
 
 def build_tutor_prompt(
