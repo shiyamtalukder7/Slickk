@@ -149,12 +149,233 @@ def mode_instructions(mode: str) -> str:
 
 
 
+def _clean_verified_lesson_text(
+    document: dict[str, Any],
+) -> str:
+    """Extract a concise passage from verified lesson material."""
+
+    facts = [
+        str(item).strip()
+        for item in document.get("facts", [])
+        if isinstance(item, str) and item.strip()
+    ]
+
+    raw_text = (
+        "\n".join(facts)
+        if facts
+        else str(document.get("text") or "").strip()
+    )
+
+    if not raw_text:
+        return ""
+
+    raw_text = re.sub(
+        r"(?<=\w)-\s*\n\s*(?=\w)",
+        "",
+        raw_text,
+    )
+
+    title = " ".join(
+        str(document.get("title") or "").split()
+    ).casefold()
+
+    topic = " ".join(
+        str(document.get("topic") or "").split()
+    ).casefold()
+
+    stop_headings = {
+        "activity",
+        "activities",
+        "exercise",
+        "exercises",
+        "question",
+        "questions",
+        "\u0985\u09a8\u09c1\u09b6\u09c0\u09b2\u09a8\u09c0",
+        "\u09aa\u09cd\u09b0\u09b6\u09cd\u09a8",
+        "\u0995\u09be\u099c",
+        "\u0995\u09be\u09b0\u09cd\u09af\u0995\u09cd\u09b0\u09ae",
+    }
+
+    bangla_section_prefixes = (
+        "\u09aa\u09be\u09a0",
+        "\u0985\u09a7\u09cd\u09af\u09be\u09af\u09bc",
+        "\u0985\u09a7\u09cd\u09af\u09be\u09df",
+    )
+
+    retained_lines: list[str] = []
+
+    for raw_line in raw_text.splitlines():
+        line = " ".join(
+            raw_line.split()
+        ).strip()
+
+        if not line:
+            continue
+
+        folded = line.casefold().strip(
+            " .:|_-??"
+        )
+
+        if folded in stop_headings:
+            break
+
+        if re.fullmatch(
+            r"(?:19|20)\d{2}",
+            folded,
+        ):
+            continue
+
+        if re.fullmatch(
+            r"(?:lesson|chapter|unit|section)"
+            r"\s*[-:]?\s*[0-9ivxlcdm]+",
+            folded,
+            flags=re.IGNORECASE,
+        ):
+            continue
+
+        is_bangla_section_header = any(
+            re.fullmatch(
+                re.escape(prefix)
+                + r"\s*[-:]?\s*\d+",
+                line,
+            )
+            for prefix in bangla_section_prefixes
+        )
+
+        if is_bangla_section_header:
+            continue
+
+        if re.fullmatch(
+            r"\d+",
+            folded,
+        ):
+            continue
+
+        if folded in {
+            title,
+            topic,
+        }:
+            continue
+
+        retained_lines.append(line)
+
+    cleaned = re.sub(
+        r"\s+",
+        " ",
+        " ".join(retained_lines),
+    ).strip()
+
+    if not cleaned:
+        return ""
+
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(
+            r"(?<=[.!?\u0964])\s+",
+            cleaned,
+        )
+        if len(sentence.strip()) >= 15
+    ]
+
+    selected: list[str] = []
+
+    for sentence in sentences:
+        candidate = " ".join(
+            [*selected, sentence]
+        )
+
+        if len(candidate) > 620:
+            break
+
+        selected.append(sentence)
+
+        if len(selected) >= 3:
+            break
+
+    if selected:
+        return " ".join(selected)
+
+    shortened = cleaned[:620]
+
+    if len(cleaned) > 620:
+        shortened = shortened.rsplit(
+            " ",
+            1,
+        )[0].rstrip(
+            " ,;:-"
+        )
+
+        shortened += "..."
+
+    return shortened
+
+
+def _verified_question(
+    document: dict[str, Any],
+) -> str:
+    """Build one question about the retrieved lesson topic."""
+
+    topic = " ".join(
+        str(
+            document.get("topic")
+            or document.get("title")
+            or "this lesson"
+        ).split()
+    ).strip()
+
+    topic = re.sub(
+        r"\s+[?-]\s+Page\s+\d+\s*$",
+        "",
+        topic,
+        flags=re.IGNORECASE,
+    )
+
+    topic = re.sub(
+        r"\s+\d+\s*$",
+        "",
+        topic,
+    ).strip()
+
+    if not topic:
+        topic = "this lesson"
+
+    language = str(
+        document.get("language") or ""
+    ).strip().casefold()
+
+    if language in {
+        "bangla",
+        "bengali",
+        "bn",
+        "bn-bd",
+    }:
+        return (
+            "\u09ac\u09cb\u099d\u09be\u09b0 "
+            "\u099c\u09a8\u09cd\u09af "
+            "\u09aa\u09cd\u09b0\u09b6\u09cd\u09a8: "
+            f"{topic} "
+            "\u09b8\u09ae\u09cd\u09aa\u09b0\u09cd\u0995\u09c7 "
+            "\u09a4\u09c1\u09ae\u09bf "
+            "\u098f\u0995\u099f\u09bf "
+            "\u0997\u09c1\u09b0\u09c1\u09a4\u09cd\u09ac\u09aa\u09c2\u09b0\u09cd\u09a3 "
+            "\u0995\u09a5\u09be "
+            "\u0995\u09c0 "
+            "\u09b6\u09bf\u0996\u09c7\u099b?"
+        )
+
+    return (
+        "Check your understanding: "
+        f"What is one important idea you learned about {topic}?"
+    )
+
+
+
 def build_verified_response(
     documents: list[dict[str, Any]],
     *,
     teaching_mode: str,
 ) -> str:
-    """Compose a safe response directly from verified lesson facts."""
+    """Compose a concise response from verified lesson material."""
 
     if not documents:
         return (
@@ -163,29 +384,33 @@ def build_verified_response(
         )
 
     document = documents[0]
-    facts = [
-        str(item).strip()
-        for item in document.get("facts", [])
-        if isinstance(item, str) and item.strip()
-    ]
 
-    if not facts:
+    excerpt = _clean_verified_lesson_text(
+        document
+    )
+
+    if not excerpt:
         return (
             "Verified lesson material was found, but it does not "
             "contain enough factual content to build an answer."
         )
 
-    selected_facts = facts[:3]
+    response = excerpt
 
-    response = " ".join(selected_facts)
-
-    if teaching_mode in {"explain", "socratic", "revision"}:
+    if teaching_mode in {
+        "explain",
+        "socratic",
+        "revision",
+        "practice",
+        "quiz",
+    }:
         response += (
-            "\n\nCheck your understanding: Does respiration happen "
-            "inside living cells, or is it simply another word for breathing?"
+            "\n\n"
+            + _verified_question(document)
         )
 
     return response
+
 
 
 def respiration_response_has_contradiction(
@@ -266,6 +491,9 @@ def model_response_is_low_quality(
     text: Any,
     *,
     topic: str = "",
+    teaching_mode: str = "",
+    language: str = "",
+    grounding_text: str = "",
 ) -> bool:
     """Detect unreliable, malformed or contradictory model output."""
 
@@ -280,6 +508,154 @@ def model_response_is_low_quality(
     lowered = stripped.lower()
 
     normalized_topic = str(topic).strip().lower()
+    normalized_mode = str(teaching_mode).strip().lower()
+    normalized_language = str(language).strip().lower()
+
+    latin_words = re.findall(
+        r"[a-zA-Z']+",
+        lowered,
+    )
+
+    english_response = normalized_language in {
+        "english",
+        "en",
+        "en-us",
+        "en-gb",
+    }
+
+    interactive_modes = {
+        "socratic",
+        "explain",
+        "practice",
+        "quiz",
+    }
+
+    # Long interactive English teaching responses must include the
+    # requested understanding-check question.
+    if (
+        english_response
+        and normalized_mode in interactive_modes
+        and len(latin_words) >= 25
+        and "?" not in stripped
+    ):
+        return True
+
+    # Reject responses that terminate on an obvious connector,
+    # indicating an incomplete or truncated generation.
+    incomplete_final_words = {
+        "and",
+        "or",
+        "because",
+        "although",
+        "while",
+        "when",
+        "then",
+        "to",
+        "of",
+        "the",
+        "a",
+        "an",
+        "with",
+        "for",
+        "from",
+    }
+
+    if (
+        english_response
+        and latin_words
+        and latin_words[-1] in incomplete_final_words
+    ):
+        return True
+
+    # Repeated procedural labels combined with repeated conclusions
+    # usually indicate an incoherent generated sequence.
+    ordinal_steps = re.findall(
+        r"\b(?:first|second|third|fourth|fifth|sixth|"
+        r"seventh|eighth|ninth|tenth)\s+step\b",
+        lowered,
+    )
+
+    if (
+        len(ordinal_steps) >= 5
+        and lowered.count("finally") >= 2
+    ):
+        return True
+
+    # Detect major English-topic drift using a conservative lexical
+    # comparison against verified local lesson material.
+    if (
+        english_response
+        and isinstance(grounding_text, str)
+        and grounding_text.strip()
+    ):
+        stop_words = {
+            "about",
+            "after",
+            "again",
+            "also",
+            "because",
+            "before",
+            "being",
+            "between",
+            "could",
+            "does",
+            "from",
+            "have",
+            "into",
+            "only",
+            "other",
+            "should",
+            "that",
+            "their",
+            "there",
+            "these",
+            "they",
+            "this",
+            "through",
+            "using",
+            "very",
+            "what",
+            "when",
+            "where",
+            "which",
+            "while",
+            "will",
+            "with",
+            "would",
+            "your",
+        }
+
+        response_terms = {
+            word
+            for word in latin_words
+            if len(word) >= 4
+            and word not in stop_words
+        }
+
+        grounding_terms = {
+            word
+            for word in re.findall(
+                r"[a-zA-Z']+",
+                grounding_text.lower(),
+            )
+            if len(word) >= 4
+            and word not in stop_words
+        }
+
+        if (
+            len(response_terms) >= 8
+            and len(grounding_terms) >= 8
+        ):
+            overlap_ratio = (
+                len(
+                    response_terms
+                    & grounding_terms
+                )
+                / len(response_terms)
+            )
+
+            if overlap_ratio < 0.08:
+                return True
 
     if (
         "respiration" in normalized_topic
@@ -301,7 +677,7 @@ def model_response_is_low_quality(
     if re.search(r"([!?.,])\1{4,}", stripped):
         return True
 
-    words = re.findall(r"[a-zA-Z']+", lowered)
+    words = latin_words
 
     if len(words) >= 12:
         unique_ratio = len(set(words)) / len(words)
@@ -343,6 +719,17 @@ def select_tutor_response(
         and model_response_is_low_quality(
             model_text,
             topic=str(tutor_metadata.get("topic", "")),
+            teaching_mode=str(
+                tutor_metadata.get("teaching_mode", "")
+            ),
+            language=str(
+                tutor_metadata.get("language", "")
+            ),
+            grounding_text=(
+                verified_response
+                if isinstance(verified_response, str)
+                else ""
+            ),
         )
         and isinstance(verified_response, str)
         and verified_response.strip()
