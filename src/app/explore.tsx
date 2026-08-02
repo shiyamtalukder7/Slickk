@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { getSlickkApiUrl } from '@/config/api';
+import { router, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   useCallback,
   useEffect,
@@ -9,6 +9,7 @@ import {
   type ComponentProps,
 } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Platform,
   Pressable,
@@ -20,6 +21,7 @@ import {
   View,
 } from 'react-native';
 
+import { getSlickkApiUrl } from '@/config/api';
 import {
   loadStudentProfile,
   type StudentEducationProfile,
@@ -33,18 +35,6 @@ type ServerStatus =
   | 'online'
   | 'offline';
 
-type QuickTool = {
-  id: string;
-  icon: IoniconName;
-  title: string;
-  subtitle: string;
-  action:
-    | 'live-tutor'
-    | 'typed-tutor'
-    | 'camera'
-    | 'upload';
-};
-
 type Subject = {
   id: string;
   icon: IoniconName;
@@ -52,36 +42,18 @@ type Subject = {
   subtitle: string;
 };
 
-const QUICK_TOOLS: QuickTool[] = [
-  {
-    id: 'voice',
-    icon: 'mic-outline',
-    title: 'Live Tutor',
-    subtitle: 'Hands-free conversation',
-    action: 'live-tutor',
-  },
-  {
-    id: 'typed',
-    icon: 'chatbubble-ellipses-outline',
-    title: 'Typed Tutor',
-    subtitle: 'Ask and learn step by step',
-    action: 'typed-tutor',
-  },
-  {
-    id: 'camera',
-    icon: 'camera-outline',
-    title: 'Camera Learn',
-    subtitle: 'Scan questions and notes',
-    action: 'camera',
-  },
-  {
-    id: 'upload',
-    icon: 'document-text-outline',
-    title: 'Upload Notes',
-    subtitle: 'Learn from documents',
-    action: 'upload',
-  },
-];
+type MoodOption = {
+  id: string;
+  icon: IoniconName;
+  label: string;
+};
+
+type RoutineItem = {
+  id: string;
+  icon: IoniconName;
+  title: string;
+  subtitle: string;
+};
 
 const DEFAULT_SUBJECTS: Subject[] = [
   {
@@ -144,7 +116,7 @@ const SUBJECT_DETAILS: Record<
   },
   'Higher Mathematics': {
     icon: 'stats-chart-outline',
-    subtitle: 'Advanced algebra, geometry and calculus',
+    subtitle: 'Advanced mathematics',
   },
   Accounting: {
     icon: 'receipt-outline',
@@ -156,53 +128,50 @@ const SUBJECT_DETAILS: Record<
   },
   History: {
     icon: 'time-outline',
-    subtitle: 'People, events and historical evidence',
+    subtitle: 'People, events and evidence',
   },
   'Geography and Environment': {
     icon: 'earth-outline',
-    subtitle: 'Places, people and the environment',
+    subtitle: 'Places, people and environment',
   },
   'Information and Communication Technology': {
     icon: 'laptop-outline',
-    subtitle: 'Computing, information and digital systems',
+    subtitle: 'Computing and digital systems',
   },
 };
 
-function getStatusText(
-  status: ServerStatus
-) {
-  switch (status) {
-    case 'online':
-      return 'SLICKK LLM ONLINE';
-
-    case 'offline':
-      return 'SLICKK LLM OFFLINE';
-
-    default:
-      return 'CHECKING SLICKK LLM';
-  }
-}
-
-function getStatusDescription(
-  status: ServerStatus
-) {
-  switch (status) {
-    case 'online':
-      return 'Your private Slickk teaching intelligence is ready.';
-
-    case 'offline':
-      return 'Start the Slickk LLM server and its configured local runtime.';
-
-    default:
-      return 'Connecting to your private teaching intelligence.';
-  }
-}
+const MOOD_OPTIONS: MoodOption[] = [
+  {
+    id: 'great',
+    icon: 'happy-outline',
+    label: 'Great',
+  },
+  {
+    id: 'okay',
+    icon: 'remove-circle-outline',
+    label: 'Okay',
+  },
+  {
+    id: 'tired',
+    icon: 'moon-outline',
+    label: 'Tired',
+  },
+];
 
 export default function SlickkDashboardScreen() {
+  const insets = useSafeAreaInsets();
+
   const [serverStatus, setServerStatus] =
     useState<ServerStatus>('checking');
+
   const [studentProfile, setStudentProfile] =
     useState<StudentEducationProfile | null>(null);
+
+  const [selectedMood, setSelectedMood] =
+    useState<string | null>(null);
+
+  const [routineDone, setRoutineDone] =
+    useState<Record<string, boolean>>({});
 
   const dashboardSubjects = useMemo(() => {
     if (!studentProfile?.subjects.length) {
@@ -213,7 +182,9 @@ export default function SlickkDashboardScreen() {
       const details = SUBJECT_DETAILS[title];
 
       return {
-        id: title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        id: title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-'),
         title,
         icon: details?.icon ?? 'school-outline',
         subtitle:
@@ -223,36 +194,59 @@ export default function SlickkDashboardScreen() {
     });
   }, [studentProfile]);
 
-  const checkServer = useCallback(
-    async () => {
-      setServerStatus('checking');
+  const nextSubject =
+    dashboardSubjects[0] ?? DEFAULT_SUBJECTS[0];
 
-      const controller =
-        new AbortController();
-
-      const timeout = setTimeout(() => {
-        controller.abort();
-      }, 5000);
-
-      try {
-        const response = await fetch(
-          getSlickkApiUrl('/health'),
-          {
-            signal: controller.signal,
-          }
-        );
-
-        setServerStatus(
-          response.ok ? 'online' : 'offline'
-        );
-      } catch {
-        setServerStatus('offline');
-      } finally {
-        clearTimeout(timeout);
-      }
-    },
-    []
+  const routineItems = useMemo<RoutineItem[]>(
+    () => [
+      {
+        id: 'lesson',
+        icon: 'school-outline',
+        title: `${nextSubject.title} lesson`,
+        subtitle: '20 minute guided lesson',
+      },
+      {
+        id: 'materials',
+        icon: 'camera-outline',
+        title: 'Review school materials',
+        subtitle: 'Upload one page or question',
+      },
+      {
+        id: 'revision',
+        icon: 'refresh-outline',
+        title: 'Quick revision',
+        subtitle: '5 minute understanding check',
+      },
+    ],
+    [nextSubject.title]
   );
+
+  const checkServer = useCallback(async () => {
+    setServerStatus('checking');
+
+    const controller = new AbortController();
+
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 5000);
+
+    try {
+      const response = await fetch(
+        getSlickkApiUrl('/health'),
+        {
+          signal: controller.signal,
+        }
+      );
+
+      setServerStatus(
+        response.ok ? 'online' : 'offline'
+      );
+    } catch {
+      setServerStatus('offline');
+    } finally {
+      clearTimeout(timeout);
+    }
+  }, []);
 
   useEffect(() => {
     void checkServer();
@@ -268,7 +262,7 @@ export default function SlickkDashboardScreen() {
         }
       })
       .catch(() => {
-        // Keep the dashboard available while the local server is offline.
+        // The dashboard remains usable offline.
       });
 
     return () => {
@@ -276,707 +270,760 @@ export default function SlickkDashboardScreen() {
     };
   }, []);
 
-  const openLiveTutor = (subject?: string) => {
-    if (subject) {
-      router.push({
-        pathname: '/live-tutor',
-        params: { subject },
-      });
-      return;
-    }
-
-    router.push('/live-tutor');
-  };
-
   const openTypedTutor = (subject?: string) => {
     if (subject) {
       router.push({
         pathname: '/tutor',
-        params: { subject },
+        params: {
+          subject,
+        },
       });
+
       return;
     }
 
     router.push('/tutor');
   };
 
-  const openLearningTwin = () => {
+  const openLiveTutor = (subject?: string) => {
+    if (subject) {
+      router.push({
+        pathname: '/live-tutor',
+        params: {
+          subject,
+        },
+      });
+
+      return;
+    }
+
+    router.push('/live-tutor');
+  };
+
+  const openCamera = () => {
+    router.push({
+      pathname: '/camera-learn',
+      params: {
+        mode: 'camera',
+      },
+    });
+  };
+
+  const openProgress = () => {
     router.push('/twin');
   };
 
-  const openStudentProfile = () => {
+  const openProfile = () => {
     router.push('/onboarding');
   };
 
-  const showComingSoon = (
-    title: string,
-    message: string
-  ) => {
-    Alert.alert(title, message);
+  const showRoutineSetup = () => {
+    router.push('/routine' as Href);
   };
 
-  const handleQuickTool = (
-    tool: QuickTool
-  ) => {
-    switch (tool.action) {
-      case 'live-tutor':
-        openLiveTutor();
-        return;
-
-      case 'typed-tutor':
-        openTypedTutor();
-        return;
-
-      case 'camera':
-        router.push({
-          pathname: '/camera-learn',
-          params: { mode: 'camera' },
-        });
-        return;
-
-      case 'upload':
-        router.push({
-          pathname: '/camera-learn',
-          params: { mode: 'files' },
-        });
-        return;
-
-      default:
-        return;
-    }
+  const showWeeklyTest = () => {
+    router.push('/weekly-test' as Href);
   };
 
-  const openSubject = (
-    subject: Subject
-  ) => {
+  const showParentPortal = () => {
+    router.push('/parent-portal' as Href);
+  };
+
+  const selectMood = (mood: MoodOption) => {
+    setSelectedMood(mood.id);
+
+    const message =
+      mood.id === 'great'
+        ? 'That is wonderful. Let us use that energy for a strong lesson.'
+        : mood.id === 'tired'
+          ? 'Thank you for telling me. Slickk will keep the next activity calm and manageable.'
+          : 'Thank you for checking in. We will take today one step at a time.';
+
     Alert.alert(
-      subject.title,
-      `Start a personalised ${subject.title} lesson with Slickk Tutor.`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Typed lesson',
-          onPress: () => openTypedTutor(subject.title),
-        },
-        {
-          text: 'Live lesson',
-          onPress: () => openLiveTutor(subject.title),
-        },
-      ]
+      `You feel ${mood.label.toLowerCase()}`,
+      message
     );
   };
 
-  const openStudyPlan = () => {
-    showComingSoon(
-      'Adaptive Study Plan',
-      'Slickk will generate personal lessons and revision schedules after the Learning Twin stores enough mastery evidence.'
-    );
+  const toggleRoutineItem = (itemId: string) => {
+    setRoutineDone((current) => ({
+      ...current,
+      [itemId]: !current[itemId],
+    }));
   };
 
-  const statusColor =
+  const completedRoutineCount =
+    routineItems.filter(
+      (item) => routineDone[item.id]
+    ).length;
+
+  const firstName =
+    studentProfile?.studentName
+      .trim()
+      .split(/\s+/)[0] || 'Student';
+
+  const grade =
+    studentProfile?.grade || 'Class 7';
+
+  const schoolName =
+    studentProfile?.school?.name || 'Your school';
+
+  const todayLabel = new Date().toLocaleDateString(
+    'en-US',
+    {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+    }
+  );
+
+  const serverColor =
     serverStatus === 'online'
       ? '#70F7D4'
       : serverStatus === 'offline'
         ? '#FF8E8E'
         : '#FFD36E';
-  const studentFirstName =
-    studentProfile?.studentName.trim().split(/\s+/)[0] ?? '';
+
+  const serverLabel =
+    serverStatus === 'online'
+      ? 'Local AI ready'
+      : serverStatus === 'offline'
+        ? 'Local AI offline'
+        : 'Checking local AI';
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView
+      style={[
+        styles.safeArea,
+        {
+          paddingTop:
+            Platform.OS === 'android'
+              ? insets.top
+              : 0,
+        },
+      ]}
+    >
       <StatusBar
         barStyle="light-content"
         backgroundColor="#07101E"
       />
 
-      <ScrollView
-        contentContainerStyle={
-          styles.container
-        }
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.topGlow} />
-        <View style={styles.sideGlow} />
-
-        <View style={styles.header}>
-          <View>
-            <Text
-              style={styles.smallGreeting}
-            >
-              {studentProfile
-                ? 'WELCOME BACK TO SLICKK'
-                : 'WELCOME TO'}
-            </Text>
-
-            <Text
-              style={[
-                styles.brand,
-                studentProfile &&
-                  styles.studentGreeting,
-              ]}
-            >
-              {studentProfile
-                ? `Hi, ${studentFirstName}`
-                : 'SLICKK'}
-            </Text>
-
-            {studentProfile ? (
-              <Text style={styles.profileContext}>
-                {studentProfile.grade} ·{' '}
-                {studentProfile.school.name}
-              </Text>
-            ) : null}
-          </View>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open student profile"
-            onPress={openStudentProfile}
-            style={({ pressed }) => [
-              styles.profileButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Ionicons
-              name="person-outline"
-              size={23}
-              color="#70F7D4"
-            />
-          </Pressable>
-        </View>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Check local AI connection"
-          onPress={() =>
-            void checkServer()
-          }
-          style={({ pressed }) => [
-            styles.connectionCard,
-            pressed && styles.pressed,
-          ]}
+      <View style={styles.screen}>
+        <ScrollView
+          contentContainerStyle={styles.container}
+          showsVerticalScrollIndicator={false}
         >
-          <View
-            style={[
-              styles.connectionIcon,
-              {
-                borderColor: statusColor,
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.connectionDot,
-                {
-                  backgroundColor:
-                    statusColor,
-                },
-              ]}
-            />
-          </View>
+          <View style={styles.topGlow} />
 
-          <View
-            style={
-              styles.connectionContent
-            }
-          >
-            <Text
-              style={[
-                styles.connectionTitle,
-                {
-                  color: statusColor,
-                },
-              ]}
-            >
-              {getStatusText(
-                serverStatus
-              )}
-            </Text>
-
-            <Text
-              style={
-                styles.connectionDescription
-              }
-            >
-              {getStatusDescription(
-                serverStatus
-              )}
-            </Text>
-          </View>
-
-          <Ionicons
-            name="refresh-outline"
-            size={21}
-            color="#71849B"
-          />
-        </Pressable>
-
-        <View style={styles.heroCard}>
-          <View style={styles.heroBadge}>
-            <Ionicons
-              name="sparkles"
-              size={15}
-              color="#70F7D4"
-            />
-
-            <Text
-              style={styles.heroBadgeText}
-            >
-              ADAPTIVE PRIVATE TUTOR
-            </Text>
-          </View>
-
-          <Text style={styles.heroTitle}>
-            Learn through a{' '}
-            <Text style={styles.highlight}>
-              real conversation.
-            </Text>
-          </Text>
-
-          <Text
-            style={styles.heroDescription}
-          >
-            Speak naturally, ask follow-up
-            questions and let Slickk adapt each
-            explanation to your understanding.
-          </Text>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Start live lesson"
-            onPress={() => openLiveTutor()}
-            style={({ pressed }) => [
-              styles.liveButton,
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <View
-              style={
-                styles.liveButtonIcon
-              }
-            >
-              <Ionicons
-                name="mic"
-                size={25}
-                color="#081426"
-              />
-            </View>
-
-            <View
-              style={
-                styles.liveButtonContent
-              }
-            >
-              <Text
-                style={
-                  styles.liveButtonTitle
-                }
-              >
-                Start live lesson
+          <View style={styles.header}>
+            <View style={styles.headerText}>
+              <Text style={styles.dateText}>
+                {todayLabel.toUpperCase()}
               </Text>
 
-              <Text
-                style={
-                  styles.liveButtonSubtitle
-                }
-              >
-                Listen, respond and continue
-                automatically
+              <Text style={styles.greeting}>
+                Hi, {firstName}
+              </Text>
+
+              <Text style={styles.profileContext}>
+                {grade} | {schoolName}
               </Text>
             </View>
 
-            <Ionicons
-              name="arrow-forward"
-              size={22}
-              color="#081426"
-            />
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open typed tutor"
-            onPress={() => openTypedTutor()}
-            style={({ pressed }) => [
-              styles.typedButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Ionicons
-              name="chatbubble-ellipses-outline"
-              size={20}
-              color="#70F7D4"
-            />
-
-            <Text
-              style={styles.typedButtonText}
-            >
-              Continue with typed tutor
-            </Text>
-
-            <Ionicons
-              name="chevron-forward"
-              size={19}
-              color="#70F7D4"
-            />
-          </Pressable>
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <View>
-            <Text
-              style={
-                styles.sectionEyebrow
-              }
-            >
-              LEARNING SYSTEM
-            </Text>
-
-            <Text
-              style={styles.sectionTitle}
-            >
-              Quick tools
-            </Text>
-          </View>
-
-          <Pressable
-            onPress={() =>
-              showComingSoon(
-                'Slickk Tools',
-                'More learning tools will appear here as each development stage is completed.'
-              )
-            }
-          >
-            <Text
-              style={styles.sectionAction}
-            >
-              View all
-            </Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.toolsGrid}>
-          {QUICK_TOOLS.map((tool) => (
             <Pressable
-              key={tool.id}
               accessibilityRole="button"
-              accessibilityLabel={tool.title}
-              onPress={() =>
-                handleQuickTool(tool)
-              }
+              accessibilityLabel="Open student profile"
+              onPress={openProfile}
               style={({ pressed }) => [
-                styles.toolCard,
+                styles.profileButton,
                 pressed && styles.pressed,
               ]}
             >
-              <View style={styles.toolIcon}>
-                <Ionicons
-                  name={tool.icon}
-                  size={25}
-                  color="#70F7D4"
-                />
-              </View>
-
-              <Text
-                style={styles.toolTitle}
-              >
-                {tool.title}
-              </Text>
-
-              <Text
-                style={
-                  styles.toolSubtitle
-                }
-              >
-                {tool.subtitle}
-              </Text>
-
-              <View
-                style={styles.toolArrow}
-              >
-                <Ionicons
-                  name="arrow-forward"
-                  size={16}
-                  color="#70F7D4"
-                />
-              </View>
-            </Pressable>
-          ))}
-        </View>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open Learning Twin"
-          onPress={openLearningTwin}
-          style={({ pressed }) => [
-            styles.twinCard,
-            pressed && styles.pressed,
-          ]}
-        >
-          <View style={styles.twinTopRow}>
-            <View style={styles.twinIcon}>
               <Ionicons
-                name="analytics-outline"
-                size={25}
+                name="person-outline"
+                size={24}
                 color="#70F7D4"
               />
-            </View>
+            </Pressable>
+          </View>
 
-            <View
-              style={styles.twinHeading}
+          <Pressable
+            onPress={() => void checkServer()}
+            style={({ pressed }) => [
+              styles.serverPill,
+              pressed && styles.pressed,
+            ]}
+          >
+            {serverStatus === 'checking' ? (
+              <ActivityIndicator
+                size="small"
+                color={serverColor}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.serverDot,
+                  {
+                    backgroundColor: serverColor,
+                  },
+                ]}
+              />
+            )}
+
+            <Text
+              style={[
+                styles.serverText,
+                {
+                  color: serverColor,
+                },
+              ]}
             >
-              <Text
-                style={styles.twinLabel}
-              >
-                LEARNING TWIN
-              </Text>
-
-              <Text
-                style={styles.twinTitle}
-              >
-                Your personal learning
-                intelligence
-              </Text>
-            </View>
+              {serverLabel}
+            </Text>
 
             <Ionicons
-              name="chevron-forward"
-              size={22}
-              color="#70F7D4"
+              name="refresh-outline"
+              size={16}
+              color="#71849B"
             />
-          </View>
+          </Pressable>
 
-          <Text
-            style={styles.twinDescription}
-          >
-            Slickk tracks topics, skills,
-            confusion signals and mastery
-            evidence to choose what you should
-            learn next.
-          </Text>
+          <View style={styles.checkInCard}>
+            <View style={styles.cardTitleRow}>
+              <View style={styles.sectionIcon}>
+                <Ionicons
+                  name="heart-outline"
+                  size={21}
+                  color="#70F7D4"
+                />
+              </View>
 
-          <View style={styles.progressHeader}>
-            <Text
-              style={styles.progressLabel}
-            >
-              Twin development
+              <View style={styles.cardTitleContent}>
+                <Text style={styles.eyebrow}>
+                  DAILY CHECK-IN
+                </Text>
+
+                <Text style={styles.cardTitle}>
+                  How are you doing today?
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.cardDescription}>
+              Tell Slickk how you feel before starting
+              your lessons.
             </Text>
 
-            <Text
-              style={styles.progressValue}
-            >
-              12%
+            <View style={styles.moodRow}>
+              {MOOD_OPTIONS.map((mood) => {
+                const isSelected =
+                  selectedMood === mood.id;
+
+                return (
+                  <Pressable
+                    key={mood.id}
+                    onPress={() => selectMood(mood)}
+                    style={({ pressed }) => [
+                      styles.moodButton,
+                      isSelected &&
+                        styles.moodButtonSelected,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Ionicons
+                      name={mood.icon}
+                      size={21}
+                      color={
+                        isSelected
+                          ? '#081426'
+                          : '#70F7D4'
+                      }
+                    />
+
+                    <Text
+                      style={[
+                        styles.moodText,
+                        isSelected &&
+                          styles.moodTextSelected,
+                      ]}
+                    >
+                      {mood.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.nextLessonCard}>
+            <View style={styles.nextLessonTop}>
+              <View>
+                <Text style={styles.nextLabel}>
+                  NEXT LESSON
+                </Text>
+
+                <Text style={styles.nextSubject}>
+                  {nextSubject.title}
+                </Text>
+              </View>
+
+              <View style={styles.readyBadge}>
+                <View style={styles.readyDot} />
+
+                <Text style={styles.readyText}>
+                  READY
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.nextDescription}>
+              Start a calm, curriculum-guided lesson
+              based on your grade and school profile.
             </Text>
-          </View>
 
-          <View style={styles.progressTrack}>
-            <View
-              style={styles.progressFill}
-            />
-          </View>
-
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text
-                style={styles.statValue}
+            <View style={styles.lessonActions}>
+              <Pressable
+                onPress={() =>
+                  openTypedTutor(nextSubject.title)
+                }
+                style={({ pressed }) => [
+                  styles.primaryLessonButton,
+                  pressed && styles.buttonPressed,
+                ]}
               >
-                0
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={20}
+                  color="#081426"
+                />
+
+                <Text style={styles.primaryButtonText}>
+                  Start lesson
+                </Text>
+
+                <Ionicons
+                  name="arrow-forward"
+                  size={19}
+                  color="#081426"
+                />
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  openLiveTutor(nextSubject.title)
+                }
+                style={({ pressed }) => [
+                  styles.voiceLessonButton,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons
+                  name="mic-outline"
+                  size={21}
+                  color="#70F7D4"
+                />
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.sectionHeading}>
+            <View>
+              <Text style={styles.eyebrow}>
+                DAILY ROUTINE
               </Text>
 
-              <Text
-                style={styles.statLabel}
-              >
-                Lessons
+              <Text style={styles.sectionTitle}>
+                Today&apos;s learning plan
               </Text>
             </View>
 
-            <View style={styles.statDivider} />
+            <Pressable onPress={showRoutineSetup}>
+              <Text style={styles.sectionAction}>
+                Edit
+              </Text>
+            </Pressable>
+          </View>
 
-            <View style={styles.statItem}>
-              <Text
-                style={styles.statValue}
-              >
-                0
+          <View style={styles.routineCard}>
+            <View style={styles.routineProgressRow}>
+              <Text style={styles.routineProgressText}>
+                {completedRoutineCount} of{' '}
+                {routineItems.length} complete
               </Text>
 
-              <Text
-                style={styles.statLabel}
-              >
-                Mastered
+              <Text style={styles.routinePercentage}>
+                {Math.round(
+                  (completedRoutineCount /
+                    routineItems.length) *
+                    100
+                )}
+                %
               </Text>
             </View>
 
-            <View style={styles.statDivider} />
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${
+                      (completedRoutineCount /
+                        routineItems.length) *
+                      100
+                    }%`,
+                  },
+                ]}
+              />
+            </View>
 
-            <View style={styles.statItem}>
-              <Text
-                style={styles.statValue}
-              >
-                1
+            {routineItems.map((item) => {
+              const isDone =
+                Boolean(routineDone[item.id]);
+
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() =>
+                    toggleRoutineItem(item.id)
+                  }
+                  style={({ pressed }) => [
+                    styles.routineItem,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.routineCheck,
+                      isDone &&
+                        styles.routineCheckDone,
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        isDone
+                          ? 'checkmark'
+                          : item.icon
+                      }
+                      size={18}
+                      color={
+                        isDone
+                          ? '#081426'
+                          : '#70F7D4'
+                      }
+                    />
+                  </View>
+
+                  <View style={styles.routineContent}>
+                    <Text
+                      style={[
+                        styles.routineTitle,
+                        isDone &&
+                          styles.routineTitleDone,
+                      ]}
+                    >
+                      {item.title}
+                    </Text>
+
+                    <Text style={styles.routineSubtitle}>
+                      {item.subtitle}
+                    </Text>
+                  </View>
+
+                  <Ionicons
+                    name="chevron-forward"
+                    size={18}
+                    color="#52657D"
+                  />
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.sectionHeading}>
+            <View>
+              <Text style={styles.eyebrow}>
+                LEARNING TOOLS
               </Text>
 
-              <Text
-                style={styles.statLabel}
-              >
-                Day streak
+              <Text style={styles.sectionTitle}>
+                Continue learning
               </Text>
             </View>
           </View>
-        </Pressable>
 
-        <View style={styles.sectionHeader}>
-          <View>
-            <Text
-              style={
-                styles.sectionEyebrow
-              }
-            >
-              CURRICULUM
-            </Text>
-
-            <Text
-              style={styles.sectionTitle}
-            >
-              {studentProfile
-                ? `${studentProfile.grade} subjects`
-                : 'Choose a subject'}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.subjectList}>
-          {dashboardSubjects.map((subject) => (
+          <View style={styles.actionGrid}>
             <Pressable
-              key={subject.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Learn ${subject.title}`}
-              onPress={() =>
-                openSubject(subject)
-              }
+              onPress={() => openTypedTutor()}
               style={({ pressed }) => [
-                styles.subjectCard,
+                styles.actionCard,
                 pressed && styles.pressed,
               ]}
             >
-              <View
-                style={styles.subjectIcon}
-              >
+              <View style={styles.actionIcon}>
                 <Ionicons
-                  name={subject.icon}
+                  name="school-outline"
                   size={24}
                   color="#70F7D4"
                 />
               </View>
 
-              <View
-                style={
-                  styles.subjectContent
-                }
-              >
-                <Text
-                  style={
-                    styles.subjectTitle
-                  }
-                >
-                  {subject.title}
-                </Text>
+              <Text style={styles.actionTitle}>
+                AI Tutor
+              </Text>
 
-                <Text
-                  style={
-                    styles.subjectSubtitle
-                  }
-                >
-                  {subject.subtitle}
-                </Text>
+              <Text style={styles.actionSubtitle}>
+                Learn step by step
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={openCamera}
+              style={({ pressed }) => [
+                styles.actionCard,
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={styles.actionIcon}>
+                <Ionicons
+                  name="camera-outline"
+                  size={24}
+                  color="#70F7D4"
+                />
               </View>
 
-              <Ionicons
-                name="chevron-forward"
-                size={21}
-                color="#62748B"
-              />
-            </Pressable>
-          ))}
-        </View>
+              <Text style={styles.actionTitle}>
+                Camera Learn
+              </Text>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Create adaptive study plan"
-          onPress={openStudyPlan}
-          style={({ pressed }) => [
-            styles.studyPlanCard,
-            pressed && styles.buttonPressed,
+              <Text style={styles.actionSubtitle}>
+                Scan a book page
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={showWeeklyTest}
+              style={({ pressed }) => [
+                styles.actionCard,
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={styles.actionIcon}>
+                <Ionicons
+                  name="document-text-outline"
+                  size={24}
+                  color="#70F7D4"
+                />
+              </View>
+
+              <Text style={styles.actionTitle}>
+                Weekly Test
+              </Text>
+
+              <Text style={styles.actionSubtitle}>
+                Test recent topics
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={openProgress}
+              style={({ pressed }) => [
+                styles.actionCard,
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={styles.actionIcon}>
+                <Ionicons
+                  name="analytics-outline"
+                  size={24}
+                  color="#70F7D4"
+                />
+              </View>
+
+              <Text style={styles.actionTitle}>
+                Progress
+              </Text>
+
+              <Text style={styles.actionSubtitle}>
+                View your Learning Twin
+              </Text>
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={openProgress}
+            style={({ pressed }) => [
+              styles.progressCard,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={styles.progressCardIcon}>
+              <Ionicons
+                name="analytics-outline"
+                size={25}
+                color="#081426"
+              />
+            </View>
+
+            <View style={styles.progressCardContent}>
+              <Text style={styles.eyebrow}>
+                LEARNING PROGRESS
+              </Text>
+
+              <Text style={styles.progressCardTitle}>
+                Your Learning Twin is getting ready
+              </Text>
+
+              <Text style={styles.progressCardText}>
+                Complete lessons and understanding
+                checks to reveal strengths and topics
+                that need revision.
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={21}
+              color="#70F7D4"
+            />
+          </Pressable>
+
+          <Pressable
+            onPress={showParentPortal}
+            style={({ pressed }) => [
+              styles.parentCard,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={styles.parentIcon}>
+              <Ionicons
+                name="people-outline"
+                size={23}
+                color="#70F7D4"
+              />
+            </View>
+
+            <View style={styles.parentContent}>
+              <Text style={styles.parentTitle}>
+                Parent Portal
+              </Text>
+
+              <Text style={styles.parentDescription}>
+                Reports, class alerts and test results
+                will appear here.
+              </Text>
+            </View>
+
+            <View style={styles.soonBadge}>
+              <Text style={styles.soonText}>
+                OPEN
+              </Text>
+            </View>
+          </Pressable>
+
+          <View style={styles.privacyRow}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={18}
+              color="#70F7D4"
+            />
+
+            <Text style={styles.privacyText}>
+              Student learning data remains under your
+              control.
+            </Text>
+          </View>
+        </ScrollView>
+
+        <View
+          style={[
+            styles.bottomNavigation,
+            {
+              paddingBottom: Math.max(
+                insets.bottom,
+                12
+              ),
+              minHeight:
+                67 +
+                Math.max(
+                  insets.bottom,
+                  12
+                ),
+            },
           ]}
         >
-          <View
-            style={styles.studyPlanIcon}
+          <Pressable style={styles.navItemActive}>
+            <Ionicons
+              name="home"
+              size={22}
+              color="#081426"
+            />
+
+            <Text style={styles.navTextActive}>
+              Home
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => openTypedTutor()}
+            style={styles.navItem}
+          >
+            <Ionicons
+              name="school-outline"
+              size={22}
+              color="#71849B"
+            />
+
+            <Text style={styles.navText}>
+              Learn
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={showRoutineSetup}
+            style={styles.navItem}
           >
             <Ionicons
               name="calendar-outline"
-              size={25}
-              color="#081426"
+              size={22}
+              color="#71849B"
             />
-          </View>
 
-          <View
-            style={
-              styles.studyPlanContent
-            }
+            <Text style={styles.navText}>
+              Routine
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={openProgress}
+            style={styles.navItem}
           >
-            <Text
-              style={
-                styles.studyPlanTitle
-              }
-            >
-              Build today’s study plan
+            <Ionicons
+              name="analytics-outline"
+              size={22}
+              color="#71849B"
+            />
+
+            <Text style={styles.navText}>
+              Progress
             </Text>
+          </Pressable>
 
-            <Text
-              style={
-                styles.studyPlanDescription
-              }
-            >
-              Lessons, revision and mastery
-              checks arranged around your time.
-            </Text>
-          </View>
-
-          <Ionicons
-            name="arrow-forward"
-            size={22}
-            color="#081426"
-          />
-        </Pressable>
-
-        <View style={styles.privacyCard}>
-          <Ionicons
-            name="shield-checkmark-outline"
-            size={21}
-            color="#70F7D4"
-          />
-
-          <View
-            style={styles.privacyContent}
+          <Pressable
+            onPress={openProfile}
+            style={styles.navItem}
           >
-            <Text
-              style={styles.privacyTitle}
-            >
-              Private by design
-            </Text>
+            <Ionicons
+              name="person-outline"
+              size={22}
+              color="#71849B"
+            />
 
-            <Text
-              style={
-                styles.privacyDescription
-              }
-            >
-              Your local tutor and Learning Twin
-              remain under your control.
+            <Text style={styles.navText}>
+              Profile
             </Text>
-          </View>
+          </Pressable>
         </View>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -987,13 +1034,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#07101E',
   },
 
+  screen: {
+    flex: 1,
+    backgroundColor: '#07101E',
+  },
+
   container: {
-    flexGrow: 1,
     paddingHorizontal: 20,
     paddingTop:
-      Platform.OS === 'android' ? 52 : 22,
-    paddingBottom: 44,
-    backgroundColor: '#07101E',
+      Platform.OS === 'android' ? 10 : 16,
+    paddingBottom: 38,
     overflow: 'hidden',
   },
 
@@ -1002,21 +1052,10 @@ const styles = StyleSheet.create({
     width: 280,
     height: 280,
     borderRadius: 140,
-    top: -155,
+    backgroundColor:
+      'rgba(61, 241, 200, 0.07)',
+    top: -160,
     right: -110,
-    backgroundColor:
-      'rgba(112, 247, 212, 0.09)',
-  },
-
-  sideGlow: {
-    position: 'absolute',
-    width: 230,
-    height: 230,
-    borderRadius: 115,
-    top: 460,
-    left: -185,
-    backgroundColor:
-      'rgba(64, 139, 255, 0.06)',
   },
 
   header: {
@@ -1025,505 +1064,571 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
 
-  smallGreeting: {
-    color: '#718096',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.7,
-  },
-
-  brand: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: 3.2,
-    marginTop: 3,
-  },
-
-  studentGreeting: {
-    color: '#F4FFFC',
-    fontSize: 30,
-    letterSpacing: -0.7,
-  },
-
-  profileContext: {
-    maxWidth: 260,
-    color: '#718096',
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-
-  profileButton: {
-    width: 49,
-    height: 49,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#22344B',
-    backgroundColor: '#0C192A',
-  },
-
-  connectionCard: {
-    minHeight: 74,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    marginTop: 25,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#1A2C42',
-    backgroundColor: '#0A1727',
-  },
-
-  connectionIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    backgroundColor: '#101E2F',
-  },
-
-  connectionDot: {
-    width: 11,
-    height: 11,
-    borderRadius: 6,
-  },
-
-  connectionContent: {
+  headerText: {
     flex: 1,
-    marginHorizontal: 12,
+    paddingRight: 14,
   },
 
-  connectionTitle: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.1,
-  },
-
-  connectionDescription: {
-    color: '#7F90A6',
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 4,
-  },
-
-  heroCard: {
-    padding: 21,
-    marginTop: 17,
-    borderRadius: 26,
-    borderWidth: 1,
-    borderColor: '#1C3448',
-    backgroundColor: '#0A1A2B',
-  },
-
-  heroBadge: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: '#102B31',
-  },
-
-  heroBadgeText: {
+  dateText: {
     color: '#70F7D4',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.1,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
   },
 
-  heroTitle: {
+  greeting: {
+    marginTop: 6,
     color: '#FFFFFF',
     fontSize: 31,
     lineHeight: 38,
-    fontWeight: '900',
-    letterSpacing: -0.8,
-    marginTop: 18,
-  },
-
-  highlight: {
-    color: '#70F7D4',
-  },
-
-  heroDescription: {
-    color: '#95A4B9',
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 11,
-  },
-
-  liveButton: {
-    minHeight: 75,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    marginTop: 22,
-    borderRadius: 20,
-    backgroundColor: '#70F7D4',
-  },
-
-  liveButtonIcon: {
-    width: 47,
-    height: 47,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor:
-      'rgba(8, 20, 38, 0.11)',
-  },
-
-  liveButtonContent: {
-    flex: 1,
-    marginHorizontal: 13,
-  },
-
-  liveButtonTitle: {
-    color: '#081426',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-
-  liveButtonSubtitle: {
-    color: '#315B58',
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 3,
-  },
-
-  typedButton: {
-    minHeight: 49,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    marginTop: 12,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#235046',
-    backgroundColor: '#0C282A',
-  },
-
-  typedButtonText: {
-    flex: 1,
-    color: '#C9FAEE',
-    fontSize: 12,
     fontWeight: '800',
   },
 
-  sectionHeader: {
+  profileContext: {
+    marginTop: 4,
+    color: '#8A9AAF',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  profileButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0D1A2C',
+    borderWidth: 1,
+    borderColor: '#20324A',
+  },
+
+  pressed: {
+    opacity: 0.72,
+  },
+
+  buttonPressed: {
+    transform: [
+      {
+        scale: 0.98,
+      },
+    ],
+  },
+
+  serverPill: {
+    marginTop: 18,
+    alignSelf: 'flex-start',
+    minHeight: 34,
+    paddingHorizontal: 12,
+    borderRadius: 17,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#0C192A',
+    borderWidth: 1,
+    borderColor: '#1A2D45',
+  },
+
+  serverDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+
+  serverText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  checkInCard: {
+    marginTop: 18,
+    padding: 18,
+    borderRadius: 24,
+    backgroundColor: '#0C192A',
+    borderWidth: 1,
+    borderColor: '#1C3048',
+  },
+
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  sectionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor:
+      'rgba(112, 247, 212, 0.10)',
+  },
+
+  cardTitleContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  eyebrow: {
+    color: '#70F7D4',
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+  },
+
+  cardTitle: {
+    marginTop: 3,
+    color: '#FFFFFF',
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '700',
+  },
+
+  cardDescription: {
+    marginTop: 13,
+    color: '#8A9AAF',
+    fontSize: 14,
+    lineHeight: 21,
+  },
+
+  moodRow: {
+    marginTop: 16,
+    flexDirection: 'row',
+    gap: 9,
+  },
+
+  moodButton: {
+    flex: 1,
+    minHeight: 48,
+    paddingHorizontal: 9,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: '#101F32',
+    borderWidth: 1,
+    borderColor: '#22364E',
+  },
+
+  moodButtonSelected: {
+    backgroundColor: '#70F7D4',
+    borderColor: '#70F7D4',
+  },
+
+  moodText: {
+    color: '#D9E4EE',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  moodTextSelected: {
+    color: '#081426',
+  },
+
+  nextLessonCard: {
+    marginTop: 16,
+    padding: 20,
+    borderRadius: 27,
+    backgroundColor: '#0D2730',
+    borderWidth: 1,
+    borderColor: '#1F5A57',
+  },
+
+  nextLessonTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+
+  nextLabel: {
+    color: '#70F7D4',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+
+  nextSubject: {
+    marginTop: 6,
+    color: '#FFFFFF',
+    fontSize: 25,
+    lineHeight: 31,
+    fontWeight: '800',
+  },
+
+  readyBadge: {
+    minHeight: 29,
+    paddingHorizontal: 10,
+    borderRadius: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor:
+      'rgba(112, 247, 212, 0.10)',
+  },
+
+  readyDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#70F7D4',
+  },
+
+  readyText: {
+    color: '#70F7D4',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+
+  nextDescription: {
+    marginTop: 12,
+    color: '#A0B4B7',
+    fontSize: 14,
+    lineHeight: 21,
+  },
+
+  lessonActions: {
+    marginTop: 18,
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  primaryLessonButton: {
+    flex: 1,
+    minHeight: 52,
+    paddingHorizontal: 16,
+    borderRadius: 17,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    backgroundColor: '#70F7D4',
+  },
+
+  primaryButtonText: {
+    flex: 1,
+    color: '#081426',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  voiceLessonButton: {
+    width: 54,
+    height: 52,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#102C35',
+    borderWidth: 1,
+    borderColor: '#285C5C',
+  },
+
+  sectionHeading: {
+    marginTop: 27,
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    marginTop: 32,
-    marginBottom: 14,
-  },
-
-  sectionEyebrow: {
-    color: '#63768E',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.4,
-    marginBottom: 4,
   },
 
   sectionTitle: {
-    color: '#F3F7FC',
-    fontSize: 19,
-    fontWeight: '900',
+    marginTop: 4,
+    color: '#FFFFFF',
+    fontSize: 21,
+    lineHeight: 27,
+    fontWeight: '800',
   },
 
   sectionAction: {
     color: '#70F7D4',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  routineCard: {
+    paddingHorizontal: 16,
+    paddingTop: 17,
+    paddingBottom: 5,
+    borderRadius: 23,
+    backgroundColor: '#0B1728',
+    borderWidth: 1,
+    borderColor: '#1D2F46',
+  },
+
+  routineProgressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+
+  routineProgressText: {
+    color: '#AAB7C7',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  routinePercentage: {
+    color: '#70F7D4',
     fontSize: 12,
     fontWeight: '800',
   },
 
-  toolsGrid: {
+  progressTrack: {
+    marginTop: 10,
+    marginBottom: 7,
+    height: 5,
+    borderRadius: 3,
+    overflow: 'hidden',
+    backgroundColor: '#17273B',
+  },
+
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: '#70F7D4',
+  },
+
+  routineItem: {
+    minHeight: 73,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#17283D',
+  },
+
+  routineCheck: {
+    width: 39,
+    height: 39,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#102137',
+    borderWidth: 1,
+    borderColor: '#27415E',
+  },
+
+  routineCheckDone: {
+    backgroundColor: '#70F7D4',
+    borderColor: '#70F7D4',
+  },
+
+  routineContent: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 8,
+  },
+
+  routineTitle: {
+    color: '#EFF5F8',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+
+  routineTitleDone: {
+    color: '#728398',
+    textDecorationLine: 'line-through',
+  },
+
+  routineSubtitle: {
+    marginTop: 2,
+    color: '#71849B',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+
+  actionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     rowGap: 12,
   },
 
-  toolCard: {
-    width: '48.3%',
-    minHeight: 157,
-    padding: 16,
-    borderRadius: 22,
+  actionCard: {
+    width: '48.4%',
+    minHeight: 145,
+    padding: 15,
+    borderRadius: 21,
+    backgroundColor: '#0C192A',
     borderWidth: 1,
-    borderColor: '#192C42',
-    backgroundColor: '#0A1727',
+    borderColor: '#1D3048',
   },
 
-  toolIcon: {
-    width: 46,
-    height: 46,
+  actionIcon: {
+    width: 43,
+    height: 43,
     borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10283A',
-  },
-
-  toolTitle: {
-    color: '#F2F6FC',
-    fontSize: 15,
-    fontWeight: '900',
-    marginTop: 14,
-  },
-
-  toolSubtitle: {
-    color: '#7E8FA5',
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 4,
-  },
-
-  toolArrow: {
-    position: 'absolute',
-    right: 14,
-    bottom: 14,
-    width: 29,
-    height: 29,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#102B31',
-  },
-
-  twinCard: {
-    padding: 19,
-    marginTop: 30,
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: '#1B4846',
-    backgroundColor: '#092329',
-  },
-
-  twinTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  twinIcon: {
-    width: 49,
-    height: 49,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10343A',
-  },
-
-  twinHeading: {
-    flex: 1,
-    marginLeft: 13,
-  },
-
-  twinLabel: {
-    color: '#70F7D4',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.4,
-  },
-
-  twinTitle: {
-    color: '#F0FFFC',
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '900',
-    marginTop: 3,
-  },
-
-  twinDescription: {
-    color: '#8EA5A8',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 16,
-  },
-
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 19,
-  },
-
-  progressLabel: {
-    color: '#99AEB1',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  progressValue: {
-    color: '#70F7D4',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-
-  progressTrack: {
-    height: 7,
-    borderRadius: 10,
-    marginTop: 8,
-    backgroundColor: '#18383C',
-    overflow: 'hidden',
-  },
-
-  progressFill: {
-    width: '12%',
-    height: '100%',
-    borderRadius: 10,
-    backgroundColor: '#70F7D4',
-  },
-
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 22,
-  },
-
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-
-  statValue: {
-    color: '#FFFFFF',
-    fontSize: 19,
-    fontWeight: '900',
-  },
-
-  statLabel: {
-    color: '#71878D',
-    fontSize: 9,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-
-  statDivider: {
-    width: 1,
-    height: 31,
-    backgroundColor: '#1B4447',
-  },
-
-  subjectList: {
-    gap: 11,
-  },
-
-  subjectCard: {
-    minHeight: 76,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#192C42',
-    backgroundColor: '#0A1727',
-  },
-
-  subjectIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10283A',
-  },
-
-  subjectContent: {
-    flex: 1,
-    marginLeft: 14,
-  },
-
-  subjectTitle: {
-    color: '#EDF3FA',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-
-  subjectSubtitle: {
-    color: '#71849A',
-    fontSize: 11,
-    marginTop: 4,
-  },
-
-  studyPlanCard: {
-    minHeight: 108,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 17,
-    marginTop: 30,
-    borderRadius: 23,
-    backgroundColor: '#70F7D4',
-  },
-
-  studyPlanIcon: {
-    width: 49,
-    height: 49,
-    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor:
-      'rgba(8, 20, 38, 0.11)',
+      'rgba(112, 247, 212, 0.09)',
   },
 
-  studyPlanContent: {
+  actionTitle: {
+    marginTop: 15,
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  actionSubtitle: {
+    marginTop: 5,
+    color: '#71849B',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+
+  progressCard: {
+    marginTop: 22,
+    padding: 17,
+    borderRadius: 23,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0D1C2D',
+    borderWidth: 1,
+    borderColor: '#24415A',
+  },
+
+  progressCardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#70F7D4',
+  },
+
+  progressCardContent: {
     flex: 1,
     marginHorizontal: 13,
   },
 
-  studyPlanTitle: {
-    color: '#081426',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-
-  studyPlanDescription: {
-    color: '#315B58',
-    fontSize: 11,
-    lineHeight: 16,
+  progressCardTitle: {
     marginTop: 4,
+    color: '#FFFFFF',
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '800',
   },
 
-  privacyCard: {
+  progressCardText: {
+    marginTop: 6,
+    color: '#7F91A7',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+
+  parentCard: {
+    marginTop: 14,
+    padding: 16,
+    borderRadius: 21,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
-    marginTop: 21,
-    borderRadius: 18,
+    backgroundColor: '#0B1728',
     borderWidth: 1,
-    borderColor: '#193343',
-    backgroundColor: '#0A1B28',
+    borderColor: '#1D3048',
   },
 
-  privacyContent: {
+  parentIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor:
+      'rgba(112, 247, 212, 0.09)',
+  },
+
+  parentContent: {
     flex: 1,
-    marginLeft: 11,
+    marginHorizontal: 12,
   },
 
-  privacyTitle: {
-    color: '#DCE8F0',
+  parentTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  parentDescription: {
+    marginTop: 4,
+    color: '#71849B',
     fontSize: 12,
+    lineHeight: 18,
+  },
+
+  soonBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor:
+      'rgba(112, 247, 212, 0.09)',
+  },
+
+  soonText: {
+    color: '#70F7D4',
+    fontSize: 9,
     fontWeight: '900',
+    letterSpacing: 1,
   },
 
-  privacyDescription: {
-    color: '#63778C',
+  privacyRow: {
+    marginTop: 22,
+    paddingHorizontal: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+
+  privacyText: {
+    flex: 1,
+    color: '#61748B',
+    fontSize: 11,
+    lineHeight: 17,
+  },
+
+  bottomNavigation: {
+    minHeight: 76,
+    paddingHorizontal: 9,
+    paddingTop: 8,
+    paddingBottom:
+      Platform.OS === 'android' ? 9 : 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: '#091525',
+    borderTopWidth: 1,
+    borderTopColor: '#1A2B40',
+  },
+
+  navItem: {
+    minWidth: 57,
+    height: 55,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+
+  navItemActive: {
+    minWidth: 61,
+    height: 55,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#70F7D4',
+  },
+
+  navText: {
+    color: '#71849B',
     fontSize: 10,
-    lineHeight: 15,
-    marginTop: 3,
+    fontWeight: '700',
   },
 
-  pressed: {
-    opacity: 0.72,
-    transform: [{ scale: 0.98 }],
-  },
-
-  buttonPressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.99 }],
+  navTextActive: {
+    color: '#081426',
+    fontSize: 10,
+    fontWeight: '800',
   },
 });

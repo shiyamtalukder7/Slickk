@@ -62,6 +62,7 @@ export type CompleteEvent = {
     model: string;
     requestId: string;
     generatedAt: string;
+    grounded: boolean;
     performance?: {
       totalMs: number | null;
       loadMs: number | null;
@@ -269,7 +270,8 @@ export async function streamTutorResponse(
           request.topic ??
           request.message.slice(0, 120),
         teaching_method: request.mode,
-        max_tokens: 64,
+        stream: false,
+        max_tokens: 180,
         messages,
       }),
     }
@@ -307,6 +309,9 @@ export async function streamTutorResponse(
     ? data.tutor
     : {};
 
+  const grounded =
+    tutorMetadata.grounded === true;
+
   const model =
     typeof data.model === 'string'
       ? data.model
@@ -337,7 +342,7 @@ export async function streamTutorResponse(
       skill: request.mode,
       misconception: '',
       nextAction:
-        'Continue the lesson and check the student?s understanding.',
+        "Continue the lesson and check the student's understanding.",
       confidence: 0.5,
       masteryDelta: 0,
     },
@@ -346,6 +351,7 @@ export async function streamTutorResponse(
       model,
       requestId,
       generatedAt: new Date().toISOString(),
+      grounded,
     },
   };
 

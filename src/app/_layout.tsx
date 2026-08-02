@@ -53,9 +53,37 @@ export default function RootLayout() {
         />
 
         <Stack.Screen
+          name="routine"
+          options={{
+            title: 'Daily Routine',
+          }}
+        />
+
+        <Stack.Screen
+          name="parent-portal"
+          options={{
+            title: 'Parent Portal',
+          }}
+        />
+
+        <Stack.Screen
+          name="weekly-test"
+          options={{
+            title: 'Weekly Test',
+          }}
+        />
+
+        <Stack.Screen
           name="twin"
           options={{
             title: 'Learning Twin',
+          }}
+        />
+
+        <Stack.Screen
+          name="camera-learn"
+          options={{
+            title: 'Learning Materials',
           }}
         />
       </Stack>

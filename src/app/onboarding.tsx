@@ -19,6 +19,7 @@ import {
 
 import {
   loadProfileOptions,
+  loadStudentProfile,
   ProfileOptions,
   saveStudentProfile,
   School,
@@ -48,6 +49,9 @@ export default function OnboardingScreen() {
   >([]);
   const [selectedSchool, setSelectedSchool] =
     useState<School | null>(null);
+  const [schoolEntryMode, setSchoolEntryMode] = useState<
+    'directory' | 'other'
+  >('directory');
   const [subjects, setSubjects] =
     useState<string[]>(DEFAULT_SUBJECTS);
   const [isSearching, setIsSearching] =
@@ -58,9 +62,27 @@ export default function OnboardingScreen() {
   useEffect(() => {
     let active = true;
 
-    loadProfileOptions().then((loaded) => {
-      if (active) {
-        setOptions(loaded);
+    Promise.all([
+      loadProfileOptions(),
+      loadStudentProfile().catch(() => null),
+    ]).then(([loadedOptions, profile]) => {
+      if (!active) {
+        return;
+      }
+
+      setOptions(loadedOptions);
+
+      if (profile) {
+        setName(profile.studentName);
+        setLanguage(profile.teachingLanguage);
+        setCurriculumTrack(profile.curriculumTrack);
+        setGrade(profile.grade);
+        setSelectedSchool(profile.school);
+        setSchoolQuery(profile.school.name);
+        setSchoolEntryMode(
+          profile.school.custom ? 'other' : 'directory'
+        );
+        setSubjects(profile.subjects);
       }
     });
 
@@ -72,6 +94,7 @@ export default function OnboardingScreen() {
   useEffect(() => {
     if (
       step !== 3 ||
+      schoolEntryMode !== 'directory' ||
       schoolQuery.trim().length < 2 ||
       selectedSchool?.name === schoolQuery.trim()
     ) {
@@ -105,7 +128,12 @@ export default function OnboardingScreen() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [schoolQuery, selectedSchool?.name, step]);
+  }, [
+    schoolEntryMode,
+    schoolQuery,
+    selectedSchool?.name,
+    step,
+  ]);
 
   const currentTrack = useMemo(
     () =>
@@ -120,8 +148,10 @@ export default function OnboardingScreen() {
       ? name.trim().length >= 2
       : step === 2
         ? Boolean(curriculumTrack && grade)
-        : schoolQuery.trim().length >= 2 &&
-          subjects.length > 0;
+        : subjects.length > 0 &&
+          (schoolEntryMode === 'directory'
+            ? Boolean(selectedSchool)
+            : schoolQuery.trim().length >= 2);
 
   const goBack = () => {
     setError('');
@@ -143,6 +173,7 @@ export default function OnboardingScreen() {
     }
 
     const school: School =
+      schoolEntryMode === 'directory' &&
       selectedSchool?.name === schoolQuery.trim()
         ? selectedSchool
         : {
@@ -435,13 +466,16 @@ export default function OnboardingScreen() {
               <Text style={styles.highlight}>school.</Text>
             </Text>
             <Text style={styles.subtitle}>
-              Search the verified directory, or enter any
-              newer, English-medium or non-EIIN school
-              yourself.
+              Choose your school from Bangladesh’s verified
+              directory. If it is missing, choose Other.
             </Text>
 
             <View style={styles.section}>
-              <Text style={styles.label}>SCHOOL NAME</Text>
+              <Text style={styles.label}>
+                {schoolEntryMode === 'directory'
+                  ? 'SEARCH SCHOOL DIRECTORY'
+                  : 'OTHER SCHOOL NAME'}
+              </Text>
               <View style={styles.inputContainer}>
                 <Ionicons
                   name="school-outline"
@@ -454,7 +488,11 @@ export default function OnboardingScreen() {
                     setSchoolQuery(value);
                     setSelectedSchool(null);
                   }}
-                  placeholder="Type school name or EIIN"
+                  placeholder={
+                    schoolEntryMode === 'directory'
+                      ? 'Search by school name or EIIN'
+                      : 'Enter your school’s official name'
+                  }
                   placeholderTextColor="#66738A"
                   style={styles.input}
                   autoCapitalize="words"
@@ -467,7 +505,8 @@ export default function OnboardingScreen() {
                 )}
               </View>
 
-              {schoolResults.length > 0 && (
+              {schoolEntryMode === 'directory' &&
+                schoolResults.length > 0 && (
                 <View style={styles.schoolResults}>
                   {schoolResults.map((school) => (
                     <Pressable
@@ -505,15 +544,44 @@ export default function OnboardingScreen() {
                 </View>
               )}
 
-              {schoolQuery.trim().length >= 2 &&
+              {schoolEntryMode === 'directory' &&
+                schoolQuery.trim().length >= 2 &&
                 !selectedSchool &&
                 !isSearching && (
                   <Text style={styles.manualHint}>
-                    If your school is not shown, Slickk will
-                    save “{schoolQuery.trim()}” as a custom
-                    school.
+                    Select a result above. If your school is
+                    absent, choose Other below.
                   </Text>
                 )}
+
+              <Pressable
+                onPress={() => {
+                  setSchoolEntryMode((current) =>
+                    current === 'directory'
+                      ? 'other'
+                      : 'directory'
+                  );
+                  setSchoolQuery('');
+                  setSelectedSchool(null);
+                  setSchoolResults([]);
+                }}
+                style={styles.otherSchoolButton}
+              >
+                <Ionicons
+                  name={
+                    schoolEntryMode === 'directory'
+                      ? 'add-circle-outline'
+                      : 'search-outline'
+                  }
+                  size={20}
+                  color="#70F7D4"
+                />
+                <Text style={styles.otherSchoolText}>
+                  {schoolEntryMode === 'directory'
+                    ? 'Other / My school is not listed'
+                    : 'Back to verified school directory'}
+                </Text>
+              </Pressable>
             </View>
 
             <View style={styles.section}>
@@ -865,6 +933,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     marginTop: 10,
+  },
+  otherSchoolButton: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#28534F',
+    backgroundColor: '#0C2429',
+  },
+  otherSchoolText: {
+    color: '#CFF9EE',
+    fontSize: 13,
+    fontWeight: '800',
   },
   subjectList: {
     gap: 9,

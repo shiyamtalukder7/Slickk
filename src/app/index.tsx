@@ -1,120 +1,334 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import {
-  Platform,
+  useEffect,
+  useState,
+  type ComponentProps,
+} from 'react';
+import {
+  ActivityIndicator,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const FEATURES = [
+import { loadStudentProfile } from '@/services/student-profile';
+
+type IoniconName =
+  ComponentProps<typeof Ionicons>['name'];
+
+type Feature = {
+  icon: IoniconName;
+  title: string;
+  description: string;
+};
+
+const FEATURES: Feature[] = [
   {
-    icon: 'mic-outline',
-    title: 'Live AI Tutor',
-    description: 'Natural voice lessons that adapt to how you learn.',
+    icon: 'school-outline',
+    title: 'Personal AI Tutor',
+    description:
+      "Calm, step-by-step lessons adapted to the student's grade and understanding.",
+  },
+  {
+    icon: 'calendar-outline',
+    title: 'Daily Learning Routine',
+    description:
+      'Organized lessons, revision activities and upcoming study reminders.',
   },
   {
     icon: 'camera-outline',
-    title: 'Camera Learning',
-    description: 'Photograph questions, notes, books and handwriting.',
+    title: 'Learn From School Materials',
+    description:
+      'Photograph textbook pages, handwritten work and difficult questions.',
   },
   {
     icon: 'analytics-outline',
     title: 'Learning Twin',
-    description: 'Tracks strengths, confusion and progress over time.',
+    description:
+      'Tracks progress, strengths, confusion and topics that need revision.',
+  },
+];
+
+const LEARNING_STEPS = [
+  {
+    number: '01',
+    title: 'Check in',
+    description: 'Tell Slickk how you feel today.',
+  },
+  {
+    number: '02',
+    title: 'Start a lesson',
+    description: 'Learn through text, voice or a textbook page.',
+  },
+  {
+    number: '03',
+    title: 'Review progress',
+    description: 'Use routines, tests and adaptive feedback.',
   },
 ];
 
 export default function SlickkWelcomeScreen() {
-  const startLearning = () => {
-    router.push('/onboarding');
+  const insets = useSafeAreaInsets();
+
+  const [isCheckingProfile, setIsCheckingProfile] =
+    useState(false);
+
+  const [hasProfile, setHasProfile] =
+    useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    loadStudentProfile()
+      .then((profile) => {
+        if (active) {
+          setHasProfile(Boolean(profile));
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setHasProfile(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const startLearning = async () => {
+    if (isCheckingProfile) {
+      return;
+    }
+
+    setIsCheckingProfile(true);
+
+    try {
+      const profile = await loadStudentProfile();
+
+      router.push(
+        profile
+          ? '/explore'
+          : '/onboarding'
+      );
+    } catch {
+      router.push('/onboarding');
+    } finally {
+      setIsCheckingProfile(false);
+    }
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View
+      style={[
+        styles.screen,
+        {
+          paddingTop: insets.top,
+        },
+      ]}
+    >
       <StatusBar
         barStyle="light-content"
         backgroundColor="#07101E"
       />
 
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[
+          styles.container,
+          {
+            paddingTop: 18,
+            paddingBottom:
+              Math.max(insets.bottom, 18) + 26,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.glowOne} />
-        <View style={styles.glowTwo} />
+        <View style={styles.topGlow} />
+        <View style={styles.sideGlow} />
 
         <View style={styles.header}>
-          <View style={styles.logo}>
-            <Ionicons
-              name="sparkles"
-              size={28}
-              color="#081426"
-            />
+          <View style={styles.brandRow}>
+            <View style={styles.logo}>
+              <Ionicons
+                name="sparkles"
+                size={24}
+                color="#081426"
+              />
+            </View>
+
+            <View>
+              <Text style={styles.brand}>
+                SLICKK
+              </Text>
+
+              <Text style={styles.brandSubtitle}>
+                PRIVATE AI SCHOOL
+              </Text>
+            </View>
           </View>
 
-          <View>
-            <Text style={styles.brand}>SLICKK</Text>
+          <View style={styles.privateBadge}>
+            <Ionicons
+              name="lock-closed-outline"
+              size={14}
+              color="#70F7D4"
+            />
 
-            <Text style={styles.brandSubtitle}>
-              Your learning intelligence
+            <Text style={styles.privateBadgeText}>
+              LOCAL
             </Text>
           </View>
         </View>
 
         <View style={styles.hero}>
-          <View style={styles.badge}>
-            <View style={styles.badgeDot} />
+          <View style={styles.heroBadge}>
+            <View style={styles.heroBadgeDot} />
 
-            <Text style={styles.badgeText}>
-              AI SCHOOL FOR EVERY STUDENT
+            <Text style={styles.heroBadgeText}>
+              BUILT AROUND EACH STUDENT
             </Text>
           </View>
 
-          <Text style={styles.title}>
-            A teacher who learns{' '}
-            <Text style={styles.highlight}>
-              how you think.
+          <Text style={styles.heroTitle}>
+            A personal teacher for{' '}
+            <Text style={styles.heroHighlight}>
+              every day.
             </Text>
           </Text>
 
-          <Text style={styles.subtitle}>
-            Speak naturally, upload anything and learn through lessons built
-            around your level, language and goals.
+          <Text style={styles.heroDescription}>
+            Learn through conversation, school
+            materials, daily routines and progress
+            that adapts over time.
           </Text>
 
           <Pressable
-            onPress={startLearning}
+            accessibilityRole="button"
+            accessibilityLabel={
+              hasProfile
+                ? 'Continue learning'
+                : 'Start learning'
+            }
+            disabled={isCheckingProfile}
+            onPress={() => void startLearning()}
             style={({ pressed }) => [
               styles.primaryButton,
-              pressed && styles.buttonPressed,
+              isCheckingProfile &&
+                styles.primaryButtonDisabled,
+              pressed &&
+                !isCheckingProfile &&
+                styles.buttonPressed,
             ]}
           >
-            <Text style={styles.primaryButtonText}>
-              Start learning
-            </Text>
+            <View style={styles.primaryButtonCopy}>
+              <Text style={styles.primaryButtonText}>
+                {isCheckingProfile
+                  ? 'Opening your learning space'
+                  : hasProfile
+                    ? 'Continue learning'
+                    : 'Start learning'}
+              </Text>
 
-            <Ionicons
-              name="arrow-forward"
-              size={21}
-              color="#081426"
-            />
+              <Text
+                style={
+                  styles.primaryButtonDescription
+                }
+              >
+                {hasProfile
+                  ? 'Return to your Student Home'
+                  : 'Create your student profile'}
+              </Text>
+            </View>
+
+            {isCheckingProfile ? (
+              <ActivityIndicator
+                size="small"
+                color="#081426"
+              />
+            ) : (
+              <View style={styles.primaryButtonIcon}>
+                <Ionicons
+                  name="arrow-forward"
+                  size={22}
+                  color="#081426"
+                />
+              </View>
+            )}
           </Pressable>
 
-          <Text style={styles.freeText}>
-            Free foundation • English • বাংলা • Banglish
+          <View style={styles.languageRow}>
+            <Ionicons
+              name="language-outline"
+              size={17}
+              color="#70F7D4"
+            />
+
+            <Text style={styles.languageText}>
+              English | বাংলা | Banglish
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionEyebrow}>
+            YOUR LEARNING DAY
+          </Text>
+
+          <Text style={styles.sectionTitle}>
+            Simple, guided and personal
           </Text>
         </View>
 
-        <View style={styles.featureSection}>
-          <Text style={styles.sectionLabel}>
-            BUILT DIFFERENTLY
+        <View style={styles.stepsCard}>
+          {LEARNING_STEPS.map((step, index) => (
+            <View
+              key={step.number}
+              style={styles.stepRow}
+            >
+              <View style={styles.stepTimeline}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>
+                    {step.number}
+                  </Text>
+                </View>
+
+                {index <
+                LEARNING_STEPS.length - 1 ? (
+                  <View style={styles.stepLine} />
+                ) : null}
+              </View>
+
+              <View style={styles.stepCopy}>
+                <Text style={styles.stepTitle}>
+                  {step.title}
+                </Text>
+
+                <Text
+                  style={styles.stepDescription}
+                >
+                  {step.description}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionEyebrow}>
+            SLICKK LEARNING SYSTEM
           </Text>
 
+          <Text style={styles.sectionTitle}>
+            More than a chat screen
+          </Text>
+        </View>
+
+        <View style={styles.featureGrid}>
           {FEATURES.map((feature) => (
             <View
               key={feature.title}
@@ -122,104 +336,119 @@ export default function SlickkWelcomeScreen() {
             >
               <View style={styles.featureIcon}>
                 <Ionicons
-                  name={
-                    feature.icon as keyof typeof Ionicons.glyphMap
-                  }
-                  size={24}
+                  name={feature.icon}
+                  size={23}
                   color="#70F7D4"
                 />
               </View>
 
-              <View style={styles.featureText}>
-                <Text style={styles.featureTitle}>
-                  {feature.title}
-                </Text>
+              <Text style={styles.featureTitle}>
+                {feature.title}
+              </Text>
 
-                <Text style={styles.featureDescription}>
-                  {feature.description}
-                </Text>
-              </View>
-
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color="#66738A"
-              />
+              <Text
+                style={styles.featureDescription}
+              >
+                {feature.description}
+              </Text>
             </View>
           ))}
         </View>
 
-        <View style={styles.promiseCard}>
-          <Ionicons
-            name="shield-checkmark"
-            size={24}
-            color="#70F7D4"
-          />
+        <View style={styles.trustCard}>
+          <View style={styles.trustIcon}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={25}
+              color="#081426"
+            />
+          </View>
 
-          <View style={styles.promiseText}>
-            <Text style={styles.promiseTitle}>
+          <View style={styles.trustCopy}>
+            <Text style={styles.trustTitle}>
               Private by design
             </Text>
 
-            <Text style={styles.promiseDescription}>
-              You control microphone access, saved lessons and learning data.
+            <Text style={styles.trustDescription}>
+              Student profiles, learning history,
+              microphone access and uploaded materials
+              remain under the user's control.
             </Text>
           </View>
         </View>
 
-        <Text style={styles.footer}>
-          SLICKK • LEARN BEYOND LIMITS
-        </Text>
+        <View style={styles.footer}>
+          <Ionicons
+            name="checkmark-circle"
+            size={16}
+            color="#70F7D4"
+          />
+
+          <Text style={styles.footerText}>
+            Free learning foundation
+          </Text>
+
+          <View style={styles.footerDot} />
+
+          <Text style={styles.footerText}>
+            Local Slickk AI
+          </Text>
+        </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  screen: {
     flex: 1,
     backgroundColor: '#07101E',
   },
 
   container: {
     flexGrow: 1,
-    paddingHorizontal: 22,
-    paddingTop: Platform.OS === 'android' ? 52 : 26,
-    paddingBottom: 36,
-    backgroundColor: '#07101E',
+    paddingHorizontal: 20,
     overflow: 'hidden',
   },
 
-  glowOne: {
+  topGlow: {
     position: 'absolute',
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: 'rgba(40, 235, 194, 0.10)',
-    top: -110,
-    right: -90,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    top: -135,
+    right: -120,
+    backgroundColor:
+      'rgba(112, 247, 212, 0.09)',
   },
 
-  glowTwo: {
+  sideGlow: {
     position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(63, 127, 255, 0.10)',
-    top: 330,
-    left: -130,
+    width: 230,
+    height: 230,
+    borderRadius: 115,
+    top: 250,
+    left: -165,
+    backgroundColor:
+      'rgba(45, 113, 190, 0.10)',
   },
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+  },
+
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 
   logo: {
-    width: 48,
-    height: 48,
+    width: 45,
+    height: 45,
     borderRadius: 16,
+    marginRight: 11,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#70F7D4',
@@ -227,185 +456,338 @@ const styles = StyleSheet.create({
 
   brand: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 21,
+    lineHeight: 25,
     fontWeight: '900',
-    letterSpacing: 2.5,
+    letterSpacing: 1.4,
   },
 
   brandSubtitle: {
-    color: '#8693A8',
-    fontSize: 12,
     marginTop: 2,
+    color: '#71849B',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+
+  privateBadge: {
+    minHeight: 31,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor:
+      'rgba(112, 247, 212, 0.08)',
+    borderWidth: 1,
+    borderColor: '#24494A',
+  },
+
+  privateBadgeText: {
+    color: '#70F7D4',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
 
   hero: {
-    marginTop: 55,
+    paddingTop: 45,
   },
 
-  badge: {
+  heroBadge: {
     alignSelf: 'flex-start',
+    minHeight: 31,
+    paddingHorizontal: 11,
+    borderRadius: 15,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
+    gap: 7,
+    backgroundColor: '#0C1D2D',
     borderWidth: 1,
-    borderColor: '#213047',
-    backgroundColor: '#0D192A',
+    borderColor: '#20364D',
   },
 
-  badgeDot: {
+  heroBadgeDot: {
     width: 7,
     height: 7,
     borderRadius: 4,
     backgroundColor: '#70F7D4',
   },
 
-  badgeText: {
-    color: '#A9B5C8',
-    fontSize: 10,
-    fontWeight: '800',
+  heroBadgeText: {
+    color: '#70F7D4',
+    fontSize: 9,
+    fontWeight: '900',
     letterSpacing: 1.1,
   },
 
-  title: {
+  heroTitle: {
+    marginTop: 20,
     color: '#FFFFFF',
     fontSize: 43,
-    lineHeight: 49,
+    lineHeight: 50,
     fontWeight: '900',
-    letterSpacing: -1.7,
-    marginTop: 22,
+    letterSpacing: -1.2,
   },
 
-  highlight: {
+  heroHighlight: {
     color: '#70F7D4',
   },
 
-  subtitle: {
-    color: '#9EACC1',
-    fontSize: 16,
-    lineHeight: 25,
-    marginTop: 18,
+  heroDescription: {
+    marginTop: 17,
+    color: '#99A8BA',
+    fontSize: 17,
+    lineHeight: 27,
   },
 
   primaryButton: {
-    height: 58,
-    borderRadius: 18,
-    marginTop: 30,
-    paddingHorizontal: 22,
+    marginTop: 28,
+    minHeight: 79,
+    paddingHorizontal: 18,
+    borderRadius: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: '#70F7D4',
   },
 
-  buttonPressed: {
-    opacity: 0.78,
-    transform: [{ scale: 0.99 }],
+  primaryButtonDisabled: {
+    opacity: 0.7,
+  },
+
+  primaryButtonCopy: {
+    flex: 1,
   },
 
   primaryButtonText: {
     color: '#081426',
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '900',
   },
 
-  freeText: {
-    color: '#718096',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 13,
-  },
-
-  featureSection: {
-    marginTop: 46,
-  },
-
-  sectionLabel: {
-    color: '#66738A',
+  primaryButtonDescription: {
+    marginTop: 4,
+    color: '#24413F',
     fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.8,
-    marginBottom: 14,
+    fontWeight: '600',
   },
 
-  featureCard: {
-    minHeight: 86,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    marginBottom: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#17263B',
-    backgroundColor: '#0B1727',
-  },
-
-  featureIcon: {
-    width: 46,
-    height: 46,
+  primaryButtonIcon: {
+    width: 43,
+    height: 43,
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10283A',
+    backgroundColor:
+      'rgba(8, 20, 38, 0.08)',
   },
 
-  featureText: {
+  buttonPressed: {
+    transform: [
+      {
+        scale: 0.985,
+      },
+    ],
+  },
+
+  languageRow: {
+    marginTop: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+
+  languageText: {
+    color: '#71849B',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  sectionHeader: {
+    marginTop: 43,
+    marginBottom: 14,
+  },
+
+  sectionEyebrow: {
+    color: '#70F7D4',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+  },
+
+  sectionTitle: {
+    marginTop: 5,
+    color: '#FFFFFF',
+    fontSize: 23,
+    lineHeight: 29,
+    fontWeight: '900',
+  },
+
+  stepsCard: {
+    paddingHorizontal: 17,
+    paddingTop: 18,
+    paddingBottom: 4,
+    borderRadius: 24,
+    backgroundColor: '#0B1728',
+    borderWidth: 1,
+    borderColor: '#1D3048',
+  },
+
+  stepRow: {
+    minHeight: 88,
+    flexDirection: 'row',
+  },
+
+  stepTimeline: {
+    width: 48,
+    alignItems: 'center',
+  },
+
+  stepNumber: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor:
+      'rgba(112, 247, 212, 0.10)',
+    borderWidth: 1,
+    borderColor: '#28504F',
+  },
+
+  stepNumberText: {
+    color: '#70F7D4',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+
+  stepLine: {
     flex: 1,
-    marginLeft: 14,
-    marginRight: 8,
+    width: 1,
+    marginVertical: 5,
+    backgroundColor: '#21364E',
+  },
+
+  stepCopy: {
+    flex: 1,
+    paddingLeft: 11,
+    paddingTop: 2,
+  },
+
+  stepTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
+
+  stepDescription: {
+    marginTop: 5,
+    color: '#71849B',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+
+  featureGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 12,
+  },
+
+  featureCard: {
+    width: '48.4%',
+    minHeight: 184,
+    padding: 15,
+    borderRadius: 22,
+    backgroundColor: '#0C192A',
+    borderWidth: 1,
+    borderColor: '#1D3048',
+  },
+
+  featureIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor:
+      'rgba(112, 247, 212, 0.09)',
   },
 
   featureTitle: {
-    color: '#F5F8FC',
-    fontSize: 16,
+    marginTop: 15,
+    color: '#FFFFFF',
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: '800',
   },
 
   featureDescription: {
-    color: '#8492A8',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 4,
+    marginTop: 7,
+    color: '#71849B',
+    fontSize: 11,
+    lineHeight: 17,
   },
 
-  promiseCard: {
+  trustCard: {
+    marginTop: 24,
+    padding: 17,
+    borderRadius: 23,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 13,
-    padding: 18,
-    marginTop: 10,
-    borderRadius: 20,
+    alignItems: 'center',
+    backgroundColor: '#0D2730',
     borderWidth: 1,
-    borderColor: '#1E3A40',
-    backgroundColor: '#0A2028',
+    borderColor: '#1F5A57',
   },
 
-  promiseText: {
+  trustIcon: {
+    width: 49,
+    height: 49,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#70F7D4',
+  },
+
+  trustCopy: {
     flex: 1,
+    marginLeft: 13,
   },
 
-  promiseTitle: {
-    color: '#EAFDF8',
+  trustTitle: {
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
   },
 
-  promiseDescription: {
-    color: '#89A6A6',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 4,
+  trustDescription: {
+    marginTop: 5,
+    color: '#8EA4A8',
+    fontSize: 11,
+    lineHeight: 17,
   },
 
   footer: {
-    color: '#445168',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-    textAlign: 'center',
-    marginTop: 34,
+    marginTop: 25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+
+  footerText: {
+    color: '#62748B',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+
+  footerDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#52657D',
   },
 });

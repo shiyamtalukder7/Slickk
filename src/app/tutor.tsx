@@ -3,6 +3,7 @@ import {
   router,
   useLocalSearchParams,
 } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -58,7 +59,7 @@ const STARTER_MESSAGES: Message[] = [
     id: 'welcome-message',
     role: 'tutor',
     text:
-      'Hello! I am your Slickk Tutor, powered by your local private AI. Tell me what you are studying and I will teach you step by step.',
+      'Hello! I am your Slickk Tutor. Tell me the topic you are studying, or upload a textbook page, and we will learn it together step by step.',
   },
 ];
 
@@ -92,6 +93,8 @@ const LEARNING_MODES: {
 ];
 
 export default function SlickkTutorScreen() {
+  const insets = useSafeAreaInsets();
+
   const { subject: requestedSubject } =
     useLocalSearchParams<{ subject?: string }>();
 
@@ -268,6 +271,16 @@ export default function SlickkTutorScreen() {
     scrollToBottom();
   };
 
+  const removeTutorMessage = (
+    messageId: string
+  ) => {
+    setMessages((currentMessages) =>
+      currentMessages.filter(
+        (message) => message.id !== messageId
+      )
+    );
+  };
+
   const cancelTutorResponse = () => {
     activeRequestRef.current?.abort();
   };
@@ -304,7 +317,7 @@ export default function SlickkTutorScreen() {
       {
         id: tutorMessageId,
         role: 'tutor',
-        text: '…',
+        text: 'Preparing a verified answer...',
       },
     ]);
     setInput('');
@@ -321,7 +334,7 @@ export default function SlickkTutorScreen() {
     const timeout = setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, 135000);
+    }, 300000);
 
     try {
       const completed = await streamTutorResponse(
@@ -346,6 +359,20 @@ export default function SlickkTutorScreen() {
           mode: selectedMode,
           recentMessages: messages
             .slice(-10)
+            .filter((message) => {
+              const text = message.text.trim();
+
+              return (
+                Boolean(text) &&
+                !text.includes('Response stopped.') &&
+                !text.includes(
+                  'The local tutor took too long'
+                ) &&
+                !text.includes(
+                  'I could not connect to Slickk LLM'
+                )
+              );
+            })
             .map((message) => ({
               role: message.role,
               text: message.text,
@@ -357,12 +384,8 @@ export default function SlickkTutorScreen() {
             setConversationId(event.conversationId);
           },
           onToken: (token) => {
-            streamedReply += token;
+            streamedReply = token;
             setHasReceivedToken(true);
-            updateTutorMessage(
-              tutorMessageId,
-              streamedReply
-            );
           },
           onComplete: (event) => {
             setConversationId(event.conversationId);
@@ -370,14 +393,14 @@ export default function SlickkTutorScreen() {
         }
       );
 
-      const reply =
-        completed.reply.trim() ||
-        streamedReply.trim() ||
-        'I could not prepare an answer. Please ask another way.';
+      const reply = completed.reply.trim();
 
       updateTutorMessage(tutorMessageId, reply);
 
-      if (completed.learningTwin) {
+      if (
+        completed.metadata.grounded &&
+        completed.learningTwin
+      ) {
         setLearningTwin({
           topic:
             completed.learningTwin.topic ||
@@ -405,6 +428,8 @@ export default function SlickkTutorScreen() {
               completed.learningTwin.masteryDelta
             ) || 0,
         });
+      } else {
+        setLearningTwin(null);
       }
 
       await speakText(reply);
@@ -417,26 +442,14 @@ export default function SlickkTutorScreen() {
       const wasCancelled =
         controller.signal.aborted && !timedOut;
 
-      if (wasCancelled) {
-        updateTutorMessage(
-          tutorMessageId,
-          streamedReply.trim()
-            ? `${streamedReply.trim()}\n\nResponse stopped.`
-            : 'Response stopped.'
-        );
-      } else {
+      removeTutorMessage(tutorMessageId);
+
+      if (!wasCancelled) {
         const errorMessage = timedOut
-          ? 'The local tutor took too long to answer. Try a shorter question.'
+          ? 'The local tutor took too long to answer. Please try again.'
           : error instanceof TutorStreamError
             ? error.message
             : 'I could not connect to Slickk LLM. Make sure the Slickk server and its configured local runtime are running.';
-
-        updateTutorMessage(
-          tutorMessageId,
-          streamedReply.trim()
-            ? `${streamedReply.trim()}\n\n${errorMessage}`
-            : errorMessage
-        );
 
         Alert.alert(
           'Slickk could not finish',
@@ -501,17 +514,22 @@ export default function SlickkTutorScreen() {
   };
 
   const openVoiceTutor = () => {
-    Alert.alert(
-      'Live Voice Tutor',
-      'Automatic spoken answers are now active. Microphone listening and hands-free conversation are the next development stage.'
-    );
+    router.push({
+      pathname: '/live-tutor',
+      params: {
+        subject: selectedSubject,
+      },
+    });
   };
 
   const openCamera = () => {
-    Alert.alert(
-      'Camera Learning',
-      'Image and handwriting analysis will be connected after the voice tutor is verified.'
-    );
+    router.push({
+      pathname: '/camera-learn',
+      params: {
+        mode: 'camera',
+        subject: selectedSubject,
+      },
+    });
   };
 
   const renderMessage = ({
@@ -607,6 +625,8 @@ export default function SlickkTutorScreen() {
       >
         <View style={styles.header}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Return to Student Home"
             onPress={async () => {
               activeRequestRef.current?.abort();
               await stopSpeech();
@@ -624,29 +644,46 @@ export default function SlickkTutorScreen() {
             />
           </Pressable>
 
-          <View style={styles.headerCenter}>
-            <View style={styles.tutorStatusRow}>
+          <View style={styles.headerTextBlock}>
+            <Text style={styles.subjectLabel}>
+              CURRENT SUBJECT
+            </Text>
+
+            <Text
+              style={styles.headerTitle}
+              numberOfLines={1}
+            >
+              {selectedSubject}
+            </Text>
+
+            <View style={styles.headerStatusRow}>
               <View
                 style={[
-                  styles.onlineDot,
+                  styles.statusDot,
                   isSpeaking &&
                     styles.speakingDot,
                 ]}
               />
 
-              <Text style={styles.headerTitle}>
-                Slickk Tutor
+              <Text style={styles.headerSubtitle}>
+                {isThinking
+                  ? hasReceivedToken
+                    ? 'Finalizing your answer'
+                    : 'Checking trusted lesson sources'
+                  : isSpeaking
+                    ? 'Speaking now'
+                    : 'Ready to teach'}
               </Text>
             </View>
-
-            <Text style={styles.headerSubtitle}>
-              {isSpeaking
-                ? 'Speaking now'
-                : 'Local private intelligence'}
-            </Text>
           </View>
 
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              isSpeechEnabled
+                ? 'Turn automatic speech off'
+                : 'Turn automatic speech on'
+            }
             onPress={() =>
               void toggleAutomaticSpeech()
             }
@@ -663,7 +700,7 @@ export default function SlickkTutorScreen() {
                   ? 'volume-high-outline'
                   : 'volume-mute-outline'
               }
-              size={22}
+              size={21}
               color={
                 isSpeechEnabled
                   ? '#081426'
@@ -671,6 +708,103 @@ export default function SlickkTutorScreen() {
               }
             />
           </Pressable>
+        </View>
+
+        <View style={styles.sourceCard}>
+          <View style={styles.sourceIcon}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={22}
+              color="#70F7D4"
+            />
+          </View>
+
+          <View style={styles.sourceCopy}>
+            <Text style={styles.sourceLabel}>
+              TRUSTED SOURCE CHECK ACTIVE
+            </Text>
+
+            <Text style={styles.sourceTitle}>
+              Curriculum-grounded lesson
+            </Text>
+
+            <Text style={styles.sourceDescription}>
+              Slickk checks approved local lesson
+              material before displaying an answer.
+            </Text>
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Upload a textbook page"
+            onPress={openCamera}
+            style={({ pressed }) => [
+              styles.uploadButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons
+              name="camera-outline"
+              size={18}
+              color="#081426"
+            />
+
+            <Text style={styles.uploadButtonText}>
+              Upload
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.modeSection}>
+          <Text style={styles.modeLabel}>
+            HOW SHOULD SLICKK HELP?
+          </Text>
+
+          <View style={styles.modeRow}>
+            {LEARNING_MODES.map((mode) => {
+              const isSelected =
+                currentMode === mode.mode;
+
+              return (
+                <Pressable
+                  key={mode.label}
+                  disabled={isThinking}
+                  onPress={() =>
+                    useLearningMode(
+                      mode.mode,
+                      mode.prompt
+                    )
+                  }
+                  style={({ pressed }) => [
+                    styles.modeButton,
+                    isSelected &&
+                      styles.modeButtonSelected,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons
+                    name={mode.icon}
+                    size={17}
+                    color={
+                      isSelected
+                        ? '#081426'
+                        : '#70F7D4'
+                    }
+                  />
+
+                  <Text
+                    style={[
+                      styles.modeText,
+                      isSelected &&
+                        styles.modeTextSelected,
+                    ]}
+                  >
+                    {mode.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
         <FlatList
@@ -685,152 +819,101 @@ export default function SlickkTutorScreen() {
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={scrollToBottom}
           ListHeaderComponent={
-            <View style={styles.lessonHeader}>
-              <View style={styles.lessonIcon}>
+            <View style={styles.introCard}>
+              <View style={styles.introIcon}>
                 <Ionicons
-                  name="infinite-outline"
-                  size={25}
-                  color="#70F7D4"
+                  name="sparkles"
+                  size={20}
+                  color="#081426"
                 />
               </View>
 
-              <Text style={styles.lessonTitle}>
-                Your personal learning space
-              </Text>
+              <View style={styles.introCopy}>
+                <Text style={styles.introTitle}>
+                  Your personal lesson
+                </Text>
 
-              <Text
-                style={
-                  styles.lessonDescription
-                }
-              >
-                Slickk teaches, listens,
-                questions, corrects and adapts
-                to how you learn.
-              </Text>
-
-              <View style={styles.modeRow}>
-                {LEARNING_MODES.map(
-                  (mode) => (
-                    <Pressable
-                      key={mode.label}
-                      disabled={isThinking}
-                      onPress={() =>
-                        useLearningMode(
-                          mode.mode,
-                          mode.prompt
-                        )
-                      }
-                      style={({
-                        pressed,
-                      }) => [
-                        styles.modeButton,
-                        currentMode ===
-                          mode.mode &&
-                          styles.modeButtonSelected,
-                        pressed &&
-                          styles.pressed,
-                      ]}
-                    >
-                      <Ionicons
-                        name={mode.icon}
-                        size={18}
-                        color="#70F7D4"
-                      />
-
-                      <Text
-                        style={styles.modeText}
-                      >
-                        {mode.label}
-                      </Text>
-                    </Pressable>
-                  )
-                )}
+                <Text style={styles.introText}>
+                  Ask a question, choose a learning
+                  mode, or upload the textbook page
+                  you are studying.
+                </Text>
               </View>
-
-              {learningTwin && (
-                <View style={styles.twinCard}>
-                  <Text
-                    style={styles.twinLabel}
-                  >
-                    LEARNING TWIN SIGNAL
-                  </Text>
-
-                  <Text
-                    style={styles.twinTopic}
-                  >
-                    {learningTwin.topic}
-                  </Text>
-
-                  <Text
-                    style={styles.twinDetail}
-                  >
-                    Skill: {learningTwin.skill}
-                  </Text>
-
-                  {learningTwin.misconception ? (
-                    <Text
-                      style={
-                        styles.twinWarning
-                      }
-                    >
-                      Possible misconception:{' '}
-                      {
-                        learningTwin.misconception
-                      }
-                    </Text>
-                  ) : null}
-
-                  <Text
-                    style={styles.twinNext}
-                  >
-                    Next:{' '}
-                    {learningTwin.nextAction}
-                  </Text>
-                </View>
-              )}
             </View>
           }
           ListFooterComponent={
-            isThinking && !hasReceivedToken ? (
-              <View
-                style={styles.thinkingRow}
-              >
-                <View
-                  style={styles.tutorAvatar}
-                >
-                  <Ionicons
-                    name="sparkles"
-                    size={18}
-                    color="#081426"
-                  />
-                </View>
+            <>
+              {learningTwin ? (
+                <View style={styles.twinStrip}>
+                  <View style={styles.twinStripIcon}>
+                    <Ionicons
+                      name="analytics-outline"
+                      size={19}
+                      color="#70F7D4"
+                    />
+                  </View>
 
-                <View
-                  style={
-                    styles.thinkingBubble
-                  }
-                >
-                  <ActivityIndicator
-                    size="small"
-                    color="#70F7D4"
-                  />
+                  <View style={styles.twinStripCopy}>
+                    <Text style={styles.twinLabel}>
+                      LEARNING TWIN UPDATE
+                    </Text>
 
-                  <Text
-                    style={
-                      styles.thinkingText
-                    }
-                  >
-                    Slickk is thinking...
-                  </Text>
+                    <Text style={styles.twinTopic}>
+                      {learningTwin.topic}
+                    </Text>
+
+                    <Text
+                      style={styles.twinNext}
+                      numberOfLines={2}
+                    >
+                      Next: {learningTwin.nextAction}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            ) : null
+              ) : null}
+
+              {isThinking &&
+              !hasReceivedToken ? (
+                <View style={styles.thinkingRow}>
+                  <View style={styles.tutorAvatar}>
+                    <Ionicons
+                      name="sparkles"
+                      size={17}
+                      color="#081426"
+                    />
+                  </View>
+
+                  <View style={styles.thinkingBubble}>
+                    <ActivityIndicator
+                      size="small"
+                      color="#70F7D4"
+                    />
+
+                    <Text style={styles.thinkingText}>
+                      Checking lesson material...
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+            </>
           }
         />
 
-        <View style={styles.composerSection}>
+        <View
+          style={[
+            styles.composerSection,
+            {
+              paddingBottom: Math.max(
+                insets.bottom,
+                14
+              ),
+            },
+          ]}
+        >
           <View style={styles.inputContainer}>
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Upload textbook page"
               onPress={openCamera}
               style={({ pressed }) => [
                 styles.inputAction,
@@ -839,7 +922,7 @@ export default function SlickkTutorScreen() {
             >
               <Ionicons
                 name="camera-outline"
-                size={23}
+                size={22}
                 color="#70F7D4"
               />
             </Pressable>
@@ -847,7 +930,7 @@ export default function SlickkTutorScreen() {
             <TextInput
               value={input}
               onChangeText={setInput}
-              placeholder="Ask Slickk anything..."
+              placeholder="Ask about this lesson..."
               placeholderTextColor="#65748A"
               style={styles.input}
               multiline
@@ -857,6 +940,7 @@ export default function SlickkTutorScreen() {
 
             {isThinking ? (
               <Pressable
+                accessibilityRole="button"
                 accessibilityLabel="Stop tutor response"
                 onPress={cancelTutorResponse}
                 style={({ pressed }) => [
@@ -866,12 +950,14 @@ export default function SlickkTutorScreen() {
               >
                 <Ionicons
                   name="stop"
-                  size={21}
+                  size={20}
                   color="#FFFFFF"
                 />
               </Pressable>
             ) : input.trim().length > 0 ? (
               <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Send question"
                 onPress={() =>
                   void sendMessage()
                 }
@@ -888,6 +974,8 @@ export default function SlickkTutorScreen() {
               </Pressable>
             ) : (
               <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open live voice tutor"
                 onPress={openVoiceTutor}
                 style={({ pressed }) => [
                   styles.voiceButton,
@@ -896,7 +984,7 @@ export default function SlickkTutorScreen() {
               >
                 <Ionicons
                   name="mic"
-                  size={22}
+                  size={21}
                   color="#081426"
                 />
               </Pressable>
@@ -904,8 +992,7 @@ export default function SlickkTutorScreen() {
           </View>
 
           <Text style={styles.composerHint}>
-            Answers speak automatically •
-            Local Slickk AI
+            Complete verified answers only | Local Slickk AI
           </Text>
         </View>
       </KeyboardAvoidingView>
@@ -926,53 +1013,69 @@ const styles = StyleSheet.create({
   header: {
     minHeight:
       Platform.OS === 'android'
-        ? 102
-        : 74,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 18,
+        ? 96
+        : 72,
+    paddingHorizontal: 16,
     paddingTop:
       Platform.OS === 'android'
-        ? 35
-        : 10,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#15243A',
+        ? 30
+        : 8,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
     backgroundColor: '#081322',
+    borderBottomWidth: 1,
+    borderBottomColor: '#16273D',
   },
 
   headerButton: {
-    width: 44,
-    height: 44,
+    width: 43,
+    height: 43,
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#0C192A',
     borderWidth: 1,
     borderColor: '#203047',
-    backgroundColor: '#0C192A',
   },
 
   headerButtonActive: {
-    borderColor: '#70F7D4',
     backgroundColor: '#70F7D4',
+    borderColor: '#70F7D4',
   },
 
-  headerCenter: {
+  headerTextBlock: {
     flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 10,
+    minWidth: 0,
+    paddingHorizontal: 12,
   },
 
-  tutorStatusRow: {
+  subjectLabel: {
+    color: '#70F7D4',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.3,
+  },
+
+  headerTitle: {
+    marginTop: 3,
+    color: '#FFFFFF',
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: '800',
+  },
+
+  headerStatusRow: {
+    marginTop: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
   },
 
-  onlineDot: {
-    width: 8,
-    height: 8,
+  statusDot: {
+    width: 7,
+    height: 7,
     borderRadius: 4,
+    marginRight: 6,
     backgroundColor: '#70F7D4',
   },
 
@@ -980,132 +1083,175 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFD36E',
   },
 
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '900',
-  },
-
   headerSubtitle: {
-    color: '#718096',
-    fontSize: 11,
-    marginTop: 3,
+    flex: 1,
+    color: '#7E90A6',
+    fontSize: 10,
   },
 
-  messageList: {
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 24,
-  },
-
-  lessonHeader: {
-    padding: 19,
-    marginBottom: 25,
-    borderRadius: 24,
+  sourceCard: {
+    marginHorizontal: 14,
+    marginTop: 12,
+    padding: 13,
+    borderRadius: 19,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0B2029',
     borderWidth: 1,
-    borderColor: '#1A3544',
-    backgroundColor: '#0A202A',
+    borderColor: '#1E484B',
   },
 
-  lessonIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+  sourceIcon: {
+    width: 39,
+    height: 39,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10313A',
+    backgroundColor:
+      'rgba(112, 247, 212, 0.09)',
   },
 
-  lessonTitle: {
-    color: '#FFFFFF',
-    fontSize: 21,
+  sourceCopy: {
+    flex: 1,
+    minWidth: 0,
+    marginHorizontal: 10,
+  },
+
+  sourceLabel: {
+    color: '#70F7D4',
+    fontSize: 8,
     fontWeight: '900',
-    marginTop: 16,
+    letterSpacing: 1,
   },
 
-  lessonDescription: {
-    color: '#8EA0B4',
+  sourceTitle: {
+    marginTop: 2,
+    color: '#FFFFFF',
     fontSize: 13,
-    lineHeight: 20,
-    marginTop: 8,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+
+  sourceDescription: {
+    marginTop: 3,
+    color: '#82999E',
+    fontSize: 10,
+    lineHeight: 15,
+  },
+
+  uploadButton: {
+    minHeight: 36,
+    paddingHorizontal: 11,
+    borderRadius: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#70F7D4',
+  },
+
+  uploadButtonText: {
+    color: '#081426',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+
+  modeSection: {
+    paddingHorizontal: 14,
+    paddingTop: 13,
+    paddingBottom: 5,
+  },
+
+  modeLabel: {
+    color: '#71849B',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.1,
   },
 
   modeRow: {
+    marginTop: 8,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 9,
-    marginTop: 18,
+    gap: 8,
   },
 
   modeButton: {
+    flex: 1,
+    minHeight: 39,
+    paddingHorizontal: 7,
+    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: '#0C192A',
     borderWidth: 1,
-    borderColor: '#1D3945',
-    backgroundColor: '#0D2631',
+    borderColor: '#21344B',
   },
 
   modeButtonSelected: {
+    backgroundColor: '#70F7D4',
     borderColor: '#70F7D4',
   },
 
   modeText: {
-    color: '#C7D7DA',
-    fontSize: 11,
+    color: '#C6D2DE',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
+  modeTextSelected: {
+    color: '#081426',
+  },
+
+  messageList: {
+    flexGrow: 1,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 22,
+  },
+
+  introCard: {
+    marginBottom: 18,
+    padding: 14,
+    borderRadius: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0B1728',
+    borderWidth: 1,
+    borderColor: '#1A2D43',
+  },
+
+  introIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#70F7D4',
+  },
+
+  introCopy: {
+    flex: 1,
+    marginLeft: 11,
+  },
+
+  introTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '800',
   },
 
-  twinCard: {
-    marginTop: 17,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#24504D',
-    backgroundColor: '#0D292C',
-  },
-
-  twinLabel: {
-    color: '#70F7D4',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-  },
-
-  twinTopic: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '900',
-    marginTop: 7,
-  },
-
-  twinDetail: {
-    color: '#9DB4B5',
-    fontSize: 12,
-    marginTop: 5,
-  },
-
-  twinWarning: {
-    color: '#FFCB7A',
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 6,
-  },
-
-  twinNext: {
-    color: '#8EDFCF',
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 6,
+  introText: {
+    marginTop: 4,
+    color: '#7F91A7',
+    fontSize: 11,
+    lineHeight: 17,
   },
 
   messageRow: {
+    marginBottom: 14,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    marginBottom: 16,
   },
 
   tutorMessageRow: {
@@ -1117,27 +1263,27 @@ const styles = StyleSheet.create({
   },
 
   tutorAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 13,
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    marginRight: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 9,
     backgroundColor: '#70F7D4',
   },
 
   messageBubble: {
-    maxWidth: '82%',
-    paddingHorizontal: 15,
-    paddingVertical: 13,
-    borderRadius: 19,
+    maxWidth: '84%',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 18,
   },
 
   tutorBubble: {
     borderBottomLeftRadius: 5,
+    backgroundColor: '#0C192A',
     borderWidth: 1,
     borderColor: '#1A2D43',
-    backgroundColor: '#0C192A',
   },
 
   studentBubble: {
@@ -1146,22 +1292,22 @@ const styles = StyleSheet.create({
   },
 
   messageHeader: {
+    marginBottom: 5,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
   },
 
   messageName: {
     color: '#70F7D4',
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '900',
-    letterSpacing: 1.1,
+    letterSpacing: 1,
   },
 
   replayButton: {
-    width: 30,
-    height: 26,
+    width: 28,
+    height: 25,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1177,56 +1323,105 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  twinStrip: {
+    marginTop: 4,
+    marginBottom: 14,
+    padding: 13,
+    borderRadius: 17,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#0D292C',
+    borderWidth: 1,
+    borderColor: '#24504D',
+  },
+
+  twinStripIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor:
+      'rgba(112, 247, 212, 0.09)',
+  },
+
+  twinStripCopy: {
+    flex: 1,
+    marginLeft: 10,
+  },
+
+  twinLabel: {
+    color: '#70F7D4',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+
+  twinTopic: {
+    marginTop: 3,
+    color: '#FFFFFF',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+
+  twinNext: {
+    marginTop: 3,
+    color: '#8EDFCF',
+    fontSize: 10,
+    lineHeight: 15,
+  },
+
   thinkingRow: {
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    marginBottom: 10,
   },
 
   thinkingBubble: {
-    minHeight: 45,
+    minHeight: 43,
+    paddingHorizontal: 14,
+    borderRadius: 17,
+    borderBottomLeftRadius: 5,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
-    paddingHorizontal: 15,
-    borderRadius: 18,
-    borderBottomLeftRadius: 5,
+    gap: 8,
+    backgroundColor: '#0C192A',
     borderWidth: 1,
     borderColor: '#1A2D43',
-    backgroundColor: '#0C192A',
   },
 
   thinkingText: {
     color: '#95A6B9',
-    fontSize: 12,
+    fontSize: 11,
   },
 
   composerSection: {
-    paddingHorizontal: 14,
-    paddingTop: 11,
+    paddingHorizontal: 13,
+    paddingTop: 9,
     paddingBottom:
       Platform.OS === 'android'
-        ? 18
-        : 12,
+        ? 14
+        : 10,
+    backgroundColor: '#081322',
     borderTopWidth: 1,
     borderTopColor: '#15243A',
-    backgroundColor: '#081322',
   },
 
   inputContainer: {
-    minHeight: 58,
+    minHeight: 57,
+    padding: 7,
+    borderRadius: 19,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: 7,
-    borderRadius: 20,
+    backgroundColor: '#0C192A',
     borderWidth: 1,
     borderColor: '#203047',
-    backgroundColor: '#0C192A',
   },
 
   inputAction: {
-    width: 43,
-    height: 43,
+    width: 42,
+    height: 42,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1234,19 +1429,19 @@ const styles = StyleSheet.create({
 
   input: {
     flex: 1,
-    minHeight: 43,
-    maxHeight: 120,
+    minHeight: 42,
+    maxHeight: 110,
+    paddingHorizontal: 7,
+    paddingTop: 10,
+    paddingBottom: 9,
     color: '#FFFFFF',
     fontSize: 14,
     lineHeight: 20,
-    paddingHorizontal: 7,
-    paddingTop: 11,
-    paddingBottom: 10,
   },
 
   sendButton: {
-    width: 43,
-    height: 43,
+    width: 42,
+    height: 42,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1254,8 +1449,8 @@ const styles = StyleSheet.create({
   },
 
   stopResponseButton: {
-    width: 43,
-    height: 43,
+    width: 42,
+    height: 42,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1263,8 +1458,8 @@ const styles = StyleSheet.create({
   },
 
   voiceButton: {
-    width: 43,
-    height: 43,
+    width: 42,
+    height: 42,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1272,14 +1467,18 @@ const styles = StyleSheet.create({
   },
 
   composerHint: {
+    marginTop: 7,
     color: '#506078',
     fontSize: 9,
     textAlign: 'center',
-    marginTop: 8,
   },
 
   pressed: {
-    opacity: 0.7,
-    transform: [{ scale: 0.97 }],
+    opacity: 0.72,
+    transform: [
+      {
+        scale: 0.98,
+      },
+    ],
   },
 });
