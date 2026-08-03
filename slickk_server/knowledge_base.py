@@ -306,6 +306,23 @@ def load_documents() -> list[dict[str, Any]]:
                 )
                 continue
 
+        if resolved_path != runtime_overlay:
+            payload_status = str(
+                payload.get("status") or ""
+            ).strip().casefold()
+
+            if (
+                payload.get("production_knowledge") is False
+                or payload_status
+                in {
+                    "draft",
+                    "inactive",
+                    "needs_human_review",
+                    "rejected",
+                }
+            ):
+                continue
+
         items = payload.get("documents")
 
         if not isinstance(items, list):
@@ -314,6 +331,22 @@ def load_documents() -> list[dict[str, Any]]:
         for item in items:
             if not isinstance(item, dict):
                 continue
+
+            if resolved_path != runtime_overlay:
+                review = item.get("review")
+
+                if isinstance(review, dict):
+                    review_status = str(
+                        review.get("status") or ""
+                    ).strip().casefold()
+
+                    if review_status in {
+                        "draft",
+                        "inactive",
+                        "needs_human_review",
+                        "rejected",
+                    }:
+                        continue
 
             document_id = str(
                 item.get("id") or ""

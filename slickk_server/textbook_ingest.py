@@ -377,6 +377,7 @@ def extract_source_pages(
         ocr_configured = False
         ocr_page_count = 0
         native_page_count = 0
+        blank_page_count = 0
 
         try:
             for page_number, page in enumerate(
@@ -403,51 +404,91 @@ def extract_source_pages(
                     extracted = native_text
                     native_page_count += 1
                 else:
-                    if not ocr_configured:
-                        executable = configure_tesseract()
-                        print(
-                            "OCR fallback enabled: "
-                            f"{executable} "
-                            f"(languages: {ocr_language})",
-                            flush=True,
-                        )
-                        ocr_configured = True
-
-                    print(
-                        f"  OCR page "
-                        f"{page_number}/{page_count}...",
-                        flush=True,
-                    )
-
                     try:
-                        pixmap = page.get_pixmap(
-                            dpi=200,
+                        preview = page.get_pixmap(
+                            matrix=fitz.Matrix(1, 1),
+                            colorspace=fitz.csGRAY,
                             alpha=False,
                         )
 
-                        image = Image.frombytes(
-                            "RGB",
-                            (pixmap.width, pixmap.height),
-                            pixmap.samples,
+                        preview_samples = preview.samples
+
+                        dark_pixel_count = sum(
+                            1
+                            for value in preview_samples
+                            if value < 245
                         )
 
-                        extracted = (
-                            pytesseract.image_to_string(
-                                image,
-                                lang=ocr_language,
-                                config="--oem 3 --psm 3",
+                        dark_pixel_ratio = (
+                            dark_pixel_count
+                            / len(preview_samples)
+                            if preview_samples
+                            else 0.0
+                        )
+                    except Exception:
+                        dark_pixel_ratio = 1.0
+
+                    if dark_pixel_ratio < 0.001:
+                        extracted = ""
+                        blank_page_count += 1
+
+                        print(
+                            f"  Skipping blank page "
+                            f"{page_number}/{page_count}.",
+                            flush=True,
+                        )
+                    else:
+                        if not ocr_configured:
+                            executable = configure_tesseract()
+
+                            print(
+                                "OCR fallback enabled: "
+                                f"{executable} "
+                                f"(languages: {ocr_language})",
+                                flush=True,
                             )
-                        )
-                    except Exception as error:
-                        raise TextbookIngestError(
-                            "OCR failed on PDF page "
-                            f"{page_number}: {error}"
-                        ) from error
 
-                    extracted = normalize_extracted_text(
-                        extracted
-                    )
-                    ocr_page_count += 1
+                            ocr_configured = True
+
+                        print(
+                            f"  OCR page "
+                            f"{page_number}/{page_count}...",
+                            flush=True,
+                        )
+
+                        try:
+                            pixmap = page.get_pixmap(
+                                dpi=200,
+                                alpha=False,
+                            )
+
+                            image = Image.frombytes(
+                                "RGB",
+                                (
+                                    pixmap.width,
+                                    pixmap.height,
+                                ),
+                                pixmap.samples,
+                            )
+
+                            extracted = (
+                                pytesseract.image_to_string(
+                                    image,
+                                    lang=ocr_language,
+                                    config="--oem 3 --psm 3",
+                                )
+                            )
+                        except Exception as error:
+                            raise TextbookIngestError(
+                                "OCR failed on PDF page "
+                                f"{page_number}: {error}"
+                            ) from error
+
+                        extracted = normalize_extracted_text(
+                            extracted
+                        )
+
+                        ocr_page_count += 1
 
                 pages.append(
                     {

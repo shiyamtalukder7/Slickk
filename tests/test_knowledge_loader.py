@@ -235,5 +235,121 @@ class KnowledgeLoaderSafetyTests(unittest.TestCase):
             )
 
 
+    def test_unapproved_root_knowledge_is_blocked(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            knowledge_directory = Path(directory)
+
+            self.write_json(
+                knowledge_directory / "draft-payload.json",
+                {
+                    "status": "needs_human_review",
+                    "production_knowledge": False,
+                    "documents": [
+                        {
+                            "id": "draft-payload-document",
+                            "title": "Draft payload document",
+                        }
+                    ],
+                },
+            )
+
+            self.write_json(
+                knowledge_directory / "draft-document.json",
+                {
+                    "status": "approved",
+                    "production_knowledge": True,
+                    "documents": [
+                        {
+                            "id": "draft-review-document",
+                            "title": "Draft review document",
+                            "review": {
+                                "status": "needs_human_review",
+                            },
+                        }
+                    ],
+                },
+            )
+
+            with patch.object(
+                knowledge_base,
+                "KNOWLEDGE_DIR",
+                knowledge_directory,
+            ):
+                documents = knowledge_base.load_documents()
+
+            document_ids = {
+                document.get("id")
+                for document in documents
+            }
+
+            self.assertNotIn(
+                "draft-payload-document",
+                document_ids,
+            )
+            self.assertNotIn(
+                "draft-review-document",
+                document_ids,
+            )
+
+    def test_approved_and_legacy_root_knowledge_loads(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            knowledge_directory = Path(directory)
+
+            self.write_json(
+                knowledge_directory / "approved.json",
+                {
+                    "status": "approved",
+                    "production_knowledge": True,
+                    "documents": [
+                        {
+                            "id": "approved-document",
+                            "title": "Approved document",
+                            "review": {
+                                "status": "approved",
+                            },
+                        }
+                    ],
+                },
+            )
+
+            self.write_json(
+                knowledge_directory / "legacy.json",
+                {
+                    "documents": [
+                        {
+                            "id": "legacy-document",
+                            "title": "Legacy document",
+                        }
+                    ],
+                },
+            )
+
+            with patch.object(
+                knowledge_base,
+                "KNOWLEDGE_DIR",
+                knowledge_directory,
+            ):
+                documents = knowledge_base.load_documents()
+
+            document_ids = {
+                document.get("id")
+                for document in documents
+            }
+
+            self.assertIn(
+                "approved-document",
+                document_ids,
+            )
+            self.assertIn(
+                "legacy-document",
+                document_ids,
+            )
+
+
+
 if __name__ == "__main__":
     unittest.main()

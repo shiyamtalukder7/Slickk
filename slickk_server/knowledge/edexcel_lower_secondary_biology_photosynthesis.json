@@ -1,0 +1,172 @@
+{
+  "format": "slickk-production-lessons-v1",
+  "status": "approved",
+  "production_knowledge": true,
+  "human_reviewed": true,
+  "approved_at": "2026-08-03T22:17:33.616845+00:00",
+  "documents": [
+    {
+      "id": "edexcel-lower-secondary-biology-photosynthesis-001",
+      "title": "Photosynthesis in Green Plants",
+      "curriculum": "edexcel",
+      "level": "Lower Secondary",
+      "grade": "Lower Secondary",
+      "subject": "Biology",
+      "chapter": "Plants",
+      "topic": "Photosynthesis",
+      "language": "English",
+      "keywords": [
+        "photosynthesis",
+        "plants",
+        "chlorophyll",
+        "chloroplast",
+        "carbon dioxide",
+        "water",
+        "glucose",
+        "oxygen",
+        "stomata",
+        "xylem",
+        "limiting factors"
+      ],
+      "learning_objectives": [
+        "Define photosynthesis as the process by which green plants use light energy to make glucose.",
+        "Identify carbon dioxide and water as the raw materials and glucose and oxygen as the products.",
+        "Explain the roles of chlorophyll, chloroplasts, stomata and xylem in photosynthesis.",
+        "State the word equation and balanced symbol equation for photosynthesis.",
+        "Describe how light intensity, carbon dioxide concentration and temperature can limit the rate of photosynthesis.",
+        "Explain several ways a plant uses the glucose produced during photosynthesis."
+      ],
+      "verified_facts": [
+        "Photosynthesis is the process by which green plants use light energy absorbed by chlorophyll to make glucose from carbon dioxide and water.",
+        "Most photosynthesis takes place in chloroplasts inside leaf cells.",
+        "Carbon dioxide enters a leaf mainly through small openings called stomata.",
+        "Water is absorbed by roots and transported to leaves through xylem vessels.",
+        "The word equation is: carbon dioxide plus water produces glucose plus oxygen, in the presence of light and chlorophyll.",
+        "The balanced symbol equation is: 6CO2 plus 6H2O produces C6H12O6 plus 6O2.",
+        "Oxygen produced during photosynthesis normally diffuses out of the leaf through the stomata.",
+        "Plants use glucose in respiration and can convert it into starch for storage or cellulose for cell walls.",
+        "Plants can use glucose-derived carbon compounds together with nitrate ions to make amino acids and proteins.",
+        "The rate of photosynthesis may be limited by light intensity, carbon dioxide concentration or temperature."
+      ],
+      "facts": [
+        "Photosynthesis is the process by which green plants use light energy absorbed by chlorophyll to make glucose from carbon dioxide and water.",
+        "Most photosynthesis takes place in chloroplasts inside leaf cells.",
+        "Carbon dioxide enters a leaf mainly through small openings called stomata.",
+        "Water is absorbed by roots and transported to leaves through xylem vessels.",
+        "The word equation is: carbon dioxide plus water produces glucose plus oxygen, in the presence of light and chlorophyll.",
+        "The balanced symbol equation is: 6CO2 plus 6H2O produces C6H12O6 plus 6O2.",
+        "Oxygen produced during photosynthesis normally diffuses out of the leaf through the stomata.",
+        "Plants use glucose in respiration and can convert it into starch for storage or cellulose for cell walls.",
+        "Plants can use glucose-derived carbon compounds together with nitrate ions to make amino acids and proteins.",
+        "The rate of photosynthesis may be limited by light intensity, carbon dioxide concentration or temperature."
+      ],
+      "common_mistakes": [
+        "Plants do not obtain their food directly from soil; they manufacture glucose through photosynthesis.",
+        "Photosynthesis and respiration are different processes, although both occur in plants.",
+        "Carbon dioxide is used during photosynthesis, while oxygen is normally released.",
+        "Photosynthesis requires light, but the light does not have to come only from the Sun.",
+        "Increasing one limiting factor will not keep increasing the rate when another factor becomes limiting."
+      ],
+      "misconceptions": [
+        "Plants do not obtain their food directly from soil; they manufacture glucose through photosynthesis.",
+        "Photosynthesis and respiration are different processes, although both occur in plants.",
+        "Carbon dioxide is used during photosynthesis, while oxygen is normally released.",
+        "Photosynthesis requires light, but the light does not have to come only from the Sun.",
+        "Increasing one limiting factor will not keep increasing the rate when another factor becomes limiting."
+      ],
+      "examples": [
+        "A plant placed in bright light may photosynthesise faster than the same plant in dim light when other conditions are suitable.",
+        "A greenhouse grower may add carbon dioxide or control temperature to improve plant growth.",
+        "A leaf uses stomata for gas exchange and xylem to receive water from the roots."
+      ],
+      "teaching": {
+        "simple_explanation": "Photosynthesis is how green plants use light energy to make glucose from carbon dioxide and water. Chlorophyll absorbs the light, and oxygen is released.",
+        "detailed_explanation": "Most photosynthesis occurs in the chloroplasts of leaf cells. Chlorophyll absorbs light energy. Carbon dioxide enters through stomata, while water reaches the leaf through xylem vessels. The absorbed energy allows the plant to form glucose, and oxygen is produced. The plant may use glucose for respiration, store it as starch, make cellulose for cell walls, or use it with nitrate ions to make amino acids and proteins. Light intensity, carbon dioxide concentration and temperature can each limit the rate.",
+        "socratic_questions": [
+          "What two raw materials must enter the plant before it can make glucose?",
+          "Why are leaves usually broad and thin?",
+          "How does carbon dioxide enter a leaf?",
+          "Why might increasing light intensity eventually stop increasing the rate?",
+          "What can a plant do with the glucose it produces?"
+        ],
+        "real_life_examples": [
+          "Greenhouse growers control light, carbon dioxide and temperature to support crop growth.",
+          "Aquatic plants can release visible oxygen bubbles when photosynthesising in bright light.",
+          "Plants kept in darkness cannot continue photosynthesis even when water and carbon dioxide are available."
+        ],
+        "memory_tricks": [
+          "Inputs go IN: carbon dioxide, water and light.",
+          "Outputs come OUT: glucose and oxygen.",
+          "Remember C-W-G-O: Carbon dioxide plus Water makes Glucose and Oxygen."
+        ]
+      },
+      "practice": {
+        "short_questions": [
+          "Define photosynthesis.",
+          "Name the green pigment that absorbs light.",
+          "How does water reach a leaf?",
+          "Write the word equation for photosynthesis.",
+          "Name three limiting factors."
+        ],
+        "mcq": [
+          {
+            "question": "Which gas enters a leaf for photosynthesis?",
+            "options": [
+              "Oxygen",
+              "Carbon dioxide",
+              "Nitrogen",
+              "Hydrogen"
+            ],
+            "answer": "Carbon dioxide",
+            "explanation": "Carbon dioxide enters the leaf mainly through the stomata and is used to make glucose."
+          },
+          {
+            "question": "Which structure transports water from the roots to the leaves?",
+            "options": [
+              "Phloem",
+              "Stomata",
+              "Xylem",
+              "Chloroplast"
+            ],
+            "answer": "Xylem",
+            "explanation": "Xylem vessels transport water and dissolved minerals upward from the roots."
+          },
+          {
+            "question": "Which substance can a plant make for storage from glucose?",
+            "options": [
+              "Starch",
+              "Oxygen",
+              "Carbon dioxide",
+              "Chlorophyll"
+            ],
+            "answer": "Starch",
+            "explanation": "Plants can convert glucose into starch for storage."
+          }
+        ],
+        "creative_questions": [
+          "A student moves a pond plant closer to a lamp and counts more oxygen bubbles. Explain the result and identify one other factor that could limit the rate.",
+          "Design a fair investigation to study how light intensity affects photosynthesis."
+        ]
+      },
+      "assessment": {
+        "difficulty": "medium",
+        "estimated_minutes": 25,
+        "prerequisites": [
+          "Basic understanding of plant cells",
+          "Knowledge that living organisms require energy",
+          "Basic understanding of gases and simple chemical equations"
+        ]
+      },
+      "sources": [
+        "Pearson Edexcel iLowerSecondary Science Specification, Issue 2, Topic 7, pages 17-18; source SHA256 dbcc25783e4acc29d582ab3173f1ce17ce7c9658dfda0a544313ebf674fc2c69.",
+        "Slickk original lesson written for curriculum alignment; raw specification chunks were not promoted."
+      ],
+      "source_type": "Slickk original verified lesson aligned to an official curriculum specification",
+      "review": {
+        "status": "approved",
+        "curriculum_reference": "Edexcel Lower Secondary Science Topic 7",
+        "raw_specification_promoted": false
+      }
+    }
+  ]
+}

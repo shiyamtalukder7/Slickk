@@ -3,7 +3,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import fitz
+
 from slickk_server.textbook_ingest import (
+    extract_source_pages,
     TextbookIngestError,
     ingest_textbook,
     native_text_is_usable,
@@ -397,6 +400,45 @@ class TextbookIngestTests(unittest.TestCase):
                     language="English",
                     output_directory=directory,
                 )
+
+
+    def test_blank_pdf_page_skips_ocr(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "blank.pdf"
+
+            document = fitz.open()
+            document.new_page()
+            document.save(str(source))
+            document.close()
+
+            with patch(
+                "slickk_server.textbook_ingest."
+                "pytesseract.image_to_string",
+                side_effect=AssertionError(
+                    "OCR must not run for a blank PDF page."
+                ),
+            ) as mocked_ocr:
+                pages = extract_source_pages(
+                    source,
+                    ocr_language="eng",
+                )
+
+            self.assertEqual(
+                len(pages),
+                1,
+            )
+            self.assertEqual(
+                pages[0]["page"],
+                1,
+            )
+            self.assertEqual(
+                str(pages[0]["text"]).strip(),
+                "",
+            )
+            mocked_ocr.assert_not_called()
+
 
 
 if __name__ == "__main__":
