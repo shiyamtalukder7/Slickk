@@ -1,6 +1,7 @@
 import { fetch as expoFetch } from 'expo/fetch';
 
 import { getSlickkApiUrl } from '@/config/api';
+import { getSlickkAuthorizationHeaders } from '@/services/api-auth';
 
 export type TutorMode =
   | 'adaptive'
@@ -215,64 +216,135 @@ async function readHttpError(response: Response) {
   );
 }
 
+function requiredString(
+  record: Record<string, unknown>,
+  key: string
+) {
+  const value = record[key];
+
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new TutorStreamError(
+      `The Slickk tutor response is missing ${key}.`,
+      'INVALID_TUTOR_RESPONSE'
+    );
+  }
+
+  return value.trim();
+}
+
+function finiteNumber(
+  value: unknown,
+  fallback: number
+) {
+  return typeof value === 'number' &&
+    Number.isFinite(value)
+    ? value
+    : fallback;
+}
+
+function nullableNumber(value: unknown) {
+  return typeof value === 'number' &&
+    Number.isFinite(value)
+    ? value
+    : null;
+}
+
+function nullableString(value: unknown) {
+  return typeof value === 'string'
+    ? value
+    : null;
+}
+
+function parseLearningTwin(
+  value: unknown
+): LearningTwin {
+  if (!isRecord(value)) {
+    throw new TutorStreamError(
+      'The Slickk tutor returned an invalid Learning Twin.',
+      'INVALID_TUTOR_RESPONSE'
+    );
+  }
+
+  return {
+    topic: requiredString(value, 'topic'),
+    skill: requiredString(value, 'skill'),
+    misconception:
+      typeof value.misconception === 'string'
+        ? value.misconception
+        : '',
+    nextAction: requiredString(value, 'nextAction'),
+    confidence: finiteNumber(
+      value.confidence,
+      0.5
+    ),
+    masteryDelta: finiteNumber(
+      value.masteryDelta,
+      0
+    ),
+  };
+}
+
+function parsePerformance(
+  value: unknown
+): CompleteEvent['metadata']['performance'] {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return {
+    totalMs: nullableNumber(value.totalMs),
+    loadMs: nullableNumber(value.loadMs),
+    promptTokens: finiteNumber(
+      value.promptTokens,
+      0
+    ),
+    generatedTokens: finiteNumber(
+      value.generatedTokens,
+      0
+    ),
+    tokensPerSecond: nullableNumber(
+      value.tokensPerSecond
+    ),
+    doneReason: nullableString(
+      value.doneReason
+    ),
+  };
+}
+
 export async function streamTutorResponse(
   request: TutorStreamRequest,
   signal: AbortSignal,
   callbacks: StreamCallbacks
 ): Promise<CompleteEvent> {
-  const conversationId =
-    request.conversationId ??
-    `local-conversation-${Date.now()}`;
-
-  const requestId = `tutor-request-${Date.now()}`;
-
-  callbacks.onStart?.({
-    type: 'start',
-    requestId,
-    conversationId,
-    model: 'slickk-edu-local',
-  });
-
-  const messages = [
-    ...request.recentMessages.map((message) => ({
-      role:
-        message.role === 'student'
-          ? ('user' as const)
-          : ('assistant' as const),
-      content: message.text,
-    })),
-    {
-      role: 'user' as const,
-      content: request.message,
-    },
-  ];
+  const authorizationHeaders =
+    await getSlickkAuthorizationHeaders();
 
   const response = await expoFetch(
-    getSlickkApiUrl('/v1/tutor/chat'),
+    getSlickkApiUrl('/api/tutor'),
     {
       method: 'POST',
       headers: {
+        ...authorizationHeaders,
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
       signal,
       body: JSON.stringify({
-        model: 'slickk-edu-local',
-        student: {
-          name: request.studentName,
-          grade: request.grade,
-          curriculum: request.curriculum,
-          school: request.school,
-        },
+        message: request.message,
+        studentName: request.studentName,
+        studentId: request.studentId,
+        ...(request.conversationId
+          ? {
+              conversationId:
+                request.conversationId,
+            }
+          : {}),
+        grade: request.grade,
         language: request.language,
         subject: request.subject,
-        topic:
-          request.topic ??
-          request.message.slice(0, 120),
-        teaching_method: request.mode,
-        stream: false,
-        max_tokens: 180,
-        messages,
+        channel: request.channel,
+        mode: request.mode,
+        recentMessages: request.recentMessages,
       }),
     }
   );
@@ -285,8 +357,7 @@ export async function streamTutorResponse(
 
   if (
     !isRecord(data) ||
-    !isRecord(data.message) ||
-    typeof data.message.content !== 'string'
+    !isRecord(data.metadata)
   ) {
     throw new TutorStreamError(
       'The Slickk tutor returned an invalid response.',
@@ -294,69 +365,65 @@ export async function streamTutorResponse(
     );
   }
 
-  const reply = data.message.content.trim();
+  const metadata = data.metadata;
+  const reply = requiredString(data, 'reply');
+  const learningTwin = parseLearningTwin(
+    data.learningTwin
+  );
 
-  if (!reply) {
-    throw new TutorStreamError(
-      'The Slickk tutor returned an empty answer.',
-      'EMPTY_TUTOR_RESPONSE'
-    );
-  }
-
-  callbacks.onToken(reply);
-
-  const tutorMetadata = isRecord(data.tutor)
-    ? data.tutor
-    : {};
-
-  const grounded =
-    tutorMetadata.grounded === true;
-
-  const model =
-    typeof data.model === 'string'
-      ? data.model
-      : 'slickk-edu-local';
-
-  const provider =
-    typeof data.backend === 'string'
-      ? data.backend
-      : 'slickk-native';
-
-  const messageId =
-    typeof data.id === 'string'
-      ? data.id
-      : `tutor-message-${Date.now()}`;
-
-  const topic =
-    typeof tutorMetadata.topic === 'string'
-      ? tutorMetadata.topic
-      : request.message.slice(0, 120);
+  const conversationId = requiredString(
+    metadata,
+    'conversationId'
+  );
+  const messageId = requiredString(
+    metadata,
+    'messageId'
+  );
+  const requestId = requiredString(
+    metadata,
+    'requestId'
+  );
+  const provider = requiredString(
+    metadata,
+    'provider'
+  );
+  const model = requiredString(
+    metadata,
+    'model'
+  );
+  const generatedAt = requiredString(
+    metadata,
+    'generatedAt'
+  );
 
   const completedEvent: CompleteEvent = {
     type: 'complete',
     reply,
     conversationId,
     messageId,
-    learningTwin: {
-      topic,
-      skill: request.mode,
-      misconception: '',
-      nextAction:
-        "Continue the lesson and check the student's understanding.",
-      confidence: 0.5,
-      masteryDelta: 0,
-    },
+    learningTwin,
     metadata: {
       provider,
       model,
       requestId,
-      generatedAt: new Date().toISOString(),
-      grounded,
+      generatedAt,
+      grounded:
+        metadata.grounding === 'curriculum',
+      performance: parsePerformance(
+        metadata.performance
+      ),
     },
   };
 
+  callbacks.onStart?.({
+    type: 'start',
+    requestId,
+    conversationId,
+    model,
+  });
+
+  callbacks.onToken(reply);
   callbacks.onComplete?.(completedEvent);
 
   return completedEvent;
 }
-

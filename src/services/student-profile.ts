@@ -3,11 +3,16 @@ import { File, Paths } from 'expo-file-system';
 
 import { getSlickkApiUrl } from '@/config/api';
 import {
+  getSlickkAuthorizationHeaders,
+  LOCAL_DEVELOPMENT_STUDENT_ID,
+  resolveSlickkStudentId,
+} from '@/services/api-auth';
+import {
   OFFLINE_ENGLISH_MEDIUM_SCHOOLS,
 } from '@/data/english-medium-schools';
 
-export const LOCAL_STUDENT_ID = 'local-student';
-const LOCAL_PROFILE_FILE_NAME = 'slickk-student-profile.json';
+const LOCAL_PROFILE_FILE_NAME =
+  'slickk-student-profile.json';
 
 export type CurriculumTrack = {
   id: string;
@@ -183,11 +188,32 @@ async function fetchWithTimeout(
   }
 }
 
-function localProfileFile() {
-  return new File(Paths.document, LOCAL_PROFILE_FILE_NAME);
+type LocalProfileEnvelope = {
+  version: 1;
+  studentId: string;
+  profile: StudentEducationProfile;
+};
+
+function isLocalProfileRecord(
+  value: unknown
+): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value)
+  );
 }
 
-async function loadLocalStudentProfile() {
+function localProfileFile() {
+  return new File(
+    Paths.document,
+    LOCAL_PROFILE_FILE_NAME
+  );
+}
+
+async function loadLocalStudentProfile(
+  studentId: string
+) {
   const file = localProfileFile();
 
   if (!file.exists) {
@@ -195,20 +221,40 @@ async function loadLocalStudentProfile() {
   }
 
   try {
-    const profile = JSON.parse(
+    const value: unknown = JSON.parse(
       await file.text()
-    ) as Partial<StudentEducationProfile>;
+    );
 
-    return profile.setupComplete
-      ? (profile as StudentEducationProfile)
-      : null;
+    if (
+      isLocalProfileRecord(value) &&
+      value.version === 1 &&
+      value.studentId === studentId &&
+      isLocalProfileRecord(value.profile) &&
+      value.profile.setupComplete === true
+    ) {
+      return value.profile as unknown as
+        StudentEducationProfile;
+    }
+
+    if (
+      studentId ===
+        LOCAL_DEVELOPMENT_STUDENT_ID &&
+      isLocalProfileRecord(value) &&
+      value.setupComplete === true
+    ) {
+      return value as unknown as
+        StudentEducationProfile;
+    }
+
+    return null;
   } catch {
     return null;
   }
 }
 
 function saveLocalStudentProfile(
-  profile: StudentEducationProfile
+  profile: StudentEducationProfile,
+  studentId: string
 ) {
   const file = localProfileFile();
 
@@ -216,7 +262,13 @@ function saveLocalStudentProfile(
     file.create();
   }
 
-  file.write(JSON.stringify(profile));
+  const storedProfile: LocalProfileEnvelope = {
+    version: 1,
+    studentId,
+    profile,
+  };
+
+  file.write(JSON.stringify(storedProfile));
 }
 
 async function parseResponse<T>(
@@ -240,7 +292,11 @@ async function parseResponse<T>(
 export async function loadProfileOptions() {
   try {
     const response = await fetchWithTimeout(
-      getSlickkApiUrl('/api/profile-options')
+      getSlickkApiUrl('/api/profile-options'),
+      {
+        headers:
+          await getSlickkAuthorizationHeaders(),
+      }
     );
 
     return await parseResponse<ProfileOptions>(response);
@@ -250,7 +306,11 @@ export async function loadProfileOptions() {
 }
 
 export async function loadStudentProfile() {
-  const localProfile = await loadLocalStudentProfile();
+  const studentId =
+    await resolveSlickkStudentId();
+
+  const localProfile =
+    await loadLocalStudentProfile(studentId);
 
   if (localProfile) {
     return localProfile;
@@ -258,13 +318,27 @@ export async function loadStudentProfile() {
 
   const response = await fetchWithTimeout(
     getSlickkApiUrl(
-      `/api/students/${LOCAL_STUDENT_ID}/profile`
-    )
+      `/api/students/${encodeURIComponent(
+        studentId
+      )}/profile`
+    ),
+    {
+      headers:
+        await getSlickkAuthorizationHeaders(),
+    }
   );
+
   const data = await parseResponse<{
     studentId: string;
     profile: Partial<StudentEducationProfile>;
   }>(response);
+
+  if (data.studentId !== studentId) {
+    throw new StudentProfileError(
+      'Slickk returned a profile for a different student.',
+      'STUDENT_IDENTITY_MISMATCH'
+    );
+  }
 
   return data.profile.setupComplete
     ? (data.profile as StudentEducationProfile)
@@ -322,7 +396,11 @@ export async function searchSchools(
           trimmed
         )}&limit=12`
       ),
-      { signal },
+      {
+        signal,
+        headers:
+          await getSlickkAuthorizationHeaders(),
+      },
       1800
     );
     const data = await parseResponse<{
@@ -345,20 +423,29 @@ export async function searchSchools(
 export async function saveStudentProfile(
   profile: StudentEducationProfile
 ) {
-  saveLocalStudentProfile(profile);
+  const studentId =
+    await resolveSlickkStudentId();
+
+  saveLocalStudentProfile(
+    profile,
+    studentId
+  );
 
   void fetchWithTimeout(
-      getSlickkApiUrl(
-        `/api/students/${LOCAL_STUDENT_ID}/profile`
-      ),
-      {
+    getSlickkApiUrl(
+      `/api/students/${encodeURIComponent(
+        studentId
+      )}/profile`
+    ),
+    {
       method: 'PUT',
       headers: {
+        ...(await getSlickkAuthorizationHeaders()),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(profile),
-      }
-    )
+    }
+  )
     .then((response) =>
       parseResponse<{
         ok: true;
@@ -367,12 +454,12 @@ export async function saveStudentProfile(
       }>(response)
     )
     .catch(() => {
-      // The device copy is authoritative while the local server is offline.
+      // The student-scoped device copy remains available offline.
     });
 
   return {
     ok: true as const,
-    studentId: LOCAL_STUDENT_ID,
+    studentId,
     profile,
   };
 }

@@ -221,6 +221,19 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
   assert.equal(healthResponse.status, 200);
   assert.equal(health.ok, true);
 
+  const localSessionResponse = await fetch(
+    `http://127.0.0.1:${gatewayPort}/api/session`
+  );
+  const localSession =
+    await localSessionResponse.json();
+
+  assert.equal(localSessionResponse.status, 200);
+  assert.equal(localSession.role, 'local');
+  assert.equal(
+    localSession.subjectId,
+    'local-student'
+  );
+
   const optionsResponse = await fetch(
     `http://127.0.0.1:${gatewayPort}/api/profile-options`
   );
@@ -467,4 +480,139 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
   assert.equal(searchResponse.status, 200);
   assert.equal(search.results[0].page, 21);
   assert.equal('content' in search.results[0], false);
+});
+
+test('student credentials cannot tutor as another student', async (context) => {
+  const token =
+    'student-one-development-token-123456';
+
+  const { createApp } = require('../src/app');
+  const {
+    parseApiCredentials,
+  } = require('../src/security/api');
+  const {
+    createConversationStore,
+  } = require('../src/storage/conversations');
+  const {
+    createCurriculumStore,
+  } = require('../src/storage/curriculum');
+  const {
+    createSchoolStore,
+  } = require('../src/storage/schools');
+
+  const conversationStore =
+    createConversationStore(':memory:');
+  const curriculumStore =
+    createCurriculumStore(':memory:');
+  const schoolStore =
+    createSchoolStore(':memory:');
+
+  const apiCredentials = parseApiCredentials(
+    JSON.stringify([
+      {
+        token,
+        role: 'student',
+        subjectId: 'student-1',
+      },
+    ])
+  );
+
+  const modelProvider = {
+    runtime: {
+      provider: 'test',
+      model: 'test-model',
+    },
+    identity: {
+      id: 'slickk-test-runtime',
+    },
+  };
+
+  const gateway = createServer(
+    createApp({
+      modelProvider,
+      conversationStore,
+      curriculumStore,
+      schoolStore,
+      apiCredentials,
+    })
+  );
+
+  const gatewayPort = await listen(gateway);
+
+  const unauthenticatedSessionResponse =
+    await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/session`
+    );
+  const unauthenticatedSession =
+    await unauthenticatedSessionResponse.json();
+
+  assert.equal(
+    unauthenticatedSessionResponse.status,
+    401
+  );
+  assert.equal(
+    unauthenticatedSession.code,
+    'AUTHENTICATION_REQUIRED'
+  );
+
+  const authenticatedSessionResponse =
+    await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/session`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+  const authenticatedSession =
+    await authenticatedSessionResponse.json();
+
+  assert.equal(
+    authenticatedSessionResponse.status,
+    200
+  );
+  assert.equal(
+    authenticatedSession.role,
+    'student'
+  );
+  assert.equal(
+    authenticatedSession.subjectId,
+    'student-1'
+  );
+
+  context.after(async () => {
+    await close(gateway);
+    conversationStore.close();
+    curriculumStore.close();
+    schoolStore.close();
+  });
+
+  for (const route of [
+    '/api/tutor',
+    '/api/tutor/stream',
+  ]) {
+    const response = await fetch(
+      `http://127.0.0.1:${gatewayPort}${route}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message:
+            'Attempt to access another student.',
+          studentId: 'student-2',
+        }),
+      }
+    );
+
+    const payload = await response.json();
+
+    assert.equal(response.status, 403);
+    assert.equal(
+      payload.code,
+      'STUDENT_ACCESS_DENIED'
+    );
+  }
 });

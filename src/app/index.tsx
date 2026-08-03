@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import type { Href } from 'expo-router';
 import {
   useEffect,
   useState,
@@ -259,6 +260,47 @@ export default function SlickkWelcomeScreen() {
                 />
               </View>
             )}
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Configure Slickk server access"
+            onPress={() =>
+              router.push('/access' as Href)
+            }
+            style={({ pressed }) => [
+              styles.accessButton,
+              pressed &&
+                styles.accessButtonPressed,
+            ]}
+          >
+            <View style={styles.accessButtonIcon}>
+              <Ionicons
+                name="key-outline"
+                size={20}
+                color="#70F7D4"
+              />
+            </View>
+
+            <View style={styles.accessButtonCopy}>
+              <Text style={styles.accessButtonTitle}>
+                Server access
+              </Text>
+
+              <Text
+                style={
+                  styles.accessButtonDescription
+                }
+              >
+                Add or verify this student?s secure access key
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={19}
+              color="#71849B"
+            />
           </Pressable>
 
           <View style={styles.languageRow}>
@@ -790,4 +832,49 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: '#52657D',
   },
+
+  accessButton: {
+    minHeight: 68,
+    marginTop: 13,
+    paddingHorizontal: 14,
+    borderRadius: 19,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#0C192A',
+    borderWidth: 1,
+    borderColor: '#1C3048',
+  },
+
+  accessButtonPressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.99 }],
+  },
+
+  accessButtonIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#102237',
+  },
+
+  accessButtonCopy: {
+    flex: 1,
+  },
+
+  accessButtonTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  accessButtonDescription: {
+    marginTop: 3,
+    color: '#7F91A7',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+
 });

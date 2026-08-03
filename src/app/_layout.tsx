@@ -31,6 +31,13 @@ export default function RootLayout() {
         />
 
         <Stack.Screen
+          name="access"
+          options={{
+            title: 'Server Access',
+          }}
+        />
+
+        <Stack.Screen
           name="explore"
           options={{
             title: 'Slickk Dashboard',

@@ -7,6 +7,10 @@ import {
 } from 'expo-file-system';
 
 import { getSlickkApiUrl } from '@/config/api';
+import {
+  getSlickkAuthorizationHeaders,
+  resolveSlickkStudentId,
+} from '@/services/api-auth';
 
 let documentPicker: typeof DocumentPickerModule | null =
   null;
@@ -299,9 +303,11 @@ export async function clearLearningMaterials() {
 }
 
 export async function analyzeLearningMaterials(
-  materials: LearningMaterial[],
-  studentId = 'local-student'
+  materials: LearningMaterial[]
 ) {
+  const studentId =
+    await resolveSlickkStudentId();
+
   const results: MaterialAnalysisResult[] = [];
 
   for (const material of materials) {
@@ -315,6 +321,7 @@ export async function analyzeLearningMaterials(
       {
         method: 'POST',
         headers: {
+          ...(await getSlickkAuthorizationHeaders()),
           'Content-Type': 'application/octet-stream',
           'X-Material-Name': encodeURIComponent(
             material.name

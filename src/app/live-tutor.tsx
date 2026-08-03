@@ -9,10 +9,12 @@ import {
   TutorStreamError,
 } from '@/services/tutor-stream';
 import {
-  LOCAL_STUDENT_ID,
   loadStudentProfile,
   type StudentEducationProfile,
 } from '@/services/student-profile';
+import {
+  resolveSlickkStudentId,
+} from '@/services/api-auth';
 import {
     ExpoSpeechRecognitionModule,
     useSpeechRecognitionEvent,
@@ -857,12 +859,15 @@ export default function LiveTutorScreen() {
     }, 135000);
 
     try {
+      const studentId =
+        await resolveSlickkStudentId();
+
       const completed = await streamTutorResponse(
         {
           message: cleanText,
           studentName:
             studentProfile?.studentName ?? 'Student',
-          studentId: LOCAL_STUDENT_ID,
+          studentId,
           conversationId:
             conversationIdRef.current,
           grade:

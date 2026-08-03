@@ -317,6 +317,10 @@ export default function SlickkDashboardScreen() {
     router.push('/onboarding');
   };
 
+  const openAccess = () => {
+    router.push('/access' as Href);
+  };
+
   const showRoutineSetup = () => {
     router.push('/routine' as Href);
   };
@@ -484,6 +488,40 @@ export default function SlickkDashboardScreen() {
             <Ionicons
               name="refresh-outline"
               size={16}
+              color="#71849B"
+            />
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open secure server access"
+            onPress={openAccess}
+            style={({ pressed }) => [
+              styles.accessCard,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={styles.accessCardIcon}>
+              <Ionicons
+                name="key-outline"
+                size={20}
+                color="#70F7D4"
+              />
+            </View>
+
+            <View style={styles.accessCardCopy}>
+              <Text style={styles.accessCardTitle}>
+                Secure server access
+              </Text>
+
+              <Text style={styles.accessCardText}>
+                Verify or replace this student?s access key
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={19}
               color="#71849B"
             />
           </Pressable>
@@ -1631,4 +1669,44 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
   },
+
+  accessCard: {
+    minHeight: 66,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    borderRadius: 19,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#0C192A',
+    borderWidth: 1,
+    borderColor: '#1C3048',
+  },
+
+  accessCardIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#102237',
+  },
+
+  accessCardCopy: {
+    flex: 1,
+  },
+
+  accessCardTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  accessCardText: {
+    marginTop: 3,
+    color: '#7F91A7',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+
 });

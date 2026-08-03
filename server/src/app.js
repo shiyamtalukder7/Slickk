@@ -124,6 +124,8 @@ function createApp(options = {}) {
     options.curriculumStore || createCurriculumStore();
   const schoolStore =
     options.schoolStore || createSchoolStore();
+  const apiCredentials =
+    options.apiCredentials ?? config.apiCredentials;
   seedEnglishMediumSchools(schoolStore);
 
   app.locals.conversationStore = conversationStore;
@@ -162,7 +164,7 @@ function createApp(options = {}) {
     next();
   });
   app.use(
-    authenticateApi(config.apiCredentials)
+    authenticateApi(apiCredentials)
   );
   app.use(
     createRateLimiter({
@@ -340,6 +342,16 @@ function createApp(options = {}) {
         'Learning Twin signals',
         'private Slickk LLM runtime',
       ],
+      requestId: request.requestId,
+    });
+  });
+
+  app.get('/api/session', (request, response) => {
+    return response.json({
+      ok: true,
+      role: request.principal?.role || 'local',
+      subjectId:
+        request.principal?.subjectId || 'local-student',
       requestId: request.requestId,
     });
   });
@@ -962,6 +974,16 @@ function createApp(options = {}) {
       });
     }
 
+    if (
+      !requireStudentAccess(
+        request,
+        response,
+        parsedRequest.data.studentId
+      )
+    ) {
+      return;
+    }
+
     const controller = new AbortController();
     const cancelRequest = () => controller.abort();
     request.once('aborted', cancelRequest);
@@ -1068,6 +1090,16 @@ function createApp(options = {}) {
         issues: parsedRequest.issues,
         requestId: request.requestId,
       });
+    }
+
+    if (
+      !requireStudentAccess(
+        request,
+        response,
+        parsedRequest.data.studentId
+      )
+    ) {
+      return;
     }
 
     const controller = new AbortController();

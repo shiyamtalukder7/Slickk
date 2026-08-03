@@ -11,10 +11,12 @@ import {
   TutorStreamError,
 } from '@/services/tutor-stream';
 import {
-  LOCAL_STUDENT_ID,
   loadStudentProfile,
   type StudentEducationProfile,
 } from '@/services/student-profile';
+import {
+  resolveSlickkStudentId,
+} from '@/services/api-auth';
 import {
   ActivityIndicator,
   Alert,
@@ -337,12 +339,15 @@ export default function SlickkTutorScreen() {
     }, 300000);
 
     try {
+      const studentId =
+        await resolveSlickkStudentId();
+
       const completed = await streamTutorResponse(
         {
           message: messageText,
           studentName:
             studentProfile?.studentName ?? 'Student',
-          studentId: LOCAL_STUDENT_ID,
+          studentId,
           conversationId,
           grade:
             studentProfile?.grade ?? 'Class 7',
