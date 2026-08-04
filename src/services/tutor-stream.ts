@@ -47,11 +47,6 @@ type StartEvent = {
   model: string;
 };
 
-type TokenEvent = {
-  type: 'token';
-  content: string;
-};
-
 export type CompleteEvent = {
   type: 'complete';
   reply: string;
@@ -74,19 +69,6 @@ export type CompleteEvent = {
     };
   };
 };
-
-type ErrorEvent = {
-  type: 'error';
-  error: string;
-  code: string;
-  requestId?: string;
-};
-
-type TutorStreamEvent =
-  | StartEvent
-  | TokenEvent
-  | CompleteEvent
-  | ErrorEvent;
 
 type StreamCallbacks = {
   onStart?: (event: StartEvent) => void;
@@ -117,94 +99,70 @@ function isRecord(
   );
 }
 
-function parseStreamEvent(line: string): TutorStreamEvent {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(line);
-  } catch {
-    throw new TutorStreamError(
-      'Slickk received an unreadable stream event.',
-      'INVALID_STREAM_EVENT'
-    );
-  }
-
-  if (!isRecord(value) || typeof value.type !== 'string') {
-    throw new TutorStreamError(
-      'Slickk received an incomplete stream event.',
-      'INVALID_STREAM_EVENT'
-    );
-  }
-
-  if (
-    value.type === 'token' &&
-    typeof value.content === 'string'
-  ) {
-    return {
-      type: 'token',
-      content: value.content,
-    };
-  }
-
-  if (
-    value.type === 'start' &&
-    typeof value.requestId === 'string' &&
-    typeof value.conversationId === 'string' &&
-    typeof value.model === 'string'
-  ) {
-    return value as StartEvent;
-  }
-
-  if (
-    value.type === 'complete' &&
-    typeof value.reply === 'string' &&
-    typeof value.conversationId === 'string' &&
-    typeof value.messageId === 'string' &&
-    isRecord(value.learningTwin) &&
-    isRecord(value.metadata)
-  ) {
-    return value as CompleteEvent;
-  }
-
-  if (
-    value.type === 'error' &&
-    typeof value.error === 'string'
-  ) {
-    return {
-      type: 'error',
-      error: value.error,
-      code:
-        typeof value.code === 'string'
-          ? value.code
-          : 'TUTOR_STREAM_ERROR',
-      requestId:
-        typeof value.requestId === 'string'
-          ? value.requestId
-          : undefined,
-    };
-  }
-
-  throw new TutorStreamError(
-    'Slickk received an unsupported stream event.',
-    'INVALID_STREAM_EVENT'
-  );
-}
-
-async function readHttpError(response: Response) {
+async function readHttpError(
+  response: Response
+) {
   try {
     const data: unknown = await response.json();
 
     if (isRecord(data)) {
-      const message =
-        typeof data.error === 'string'
-          ? data.error
-          : 'The tutor request failed.';
-      const code =
-        typeof data.code === 'string'
-          ? data.code
-          : `HTTP_${response.status}`;
+      const detail = data.detail;
 
-      return new TutorStreamError(message, code);
+      let detailMessage = '';
+
+      if (typeof detail === 'string') {
+        detailMessage = detail.trim();
+      } else if (Array.isArray(detail)) {
+        detailMessage = detail
+          .map((item) => {
+            if (typeof item === 'string') {
+              return item.trim();
+            }
+
+            if (
+              isRecord(item) &&
+              typeof item.msg === 'string'
+            ) {
+              return item.msg.trim();
+            }
+
+            return '';
+          })
+          .filter(Boolean)
+          .join('; ');
+      }
+
+      const firstText = (
+        ...values: unknown[]
+      ) => {
+        for (const value of values) {
+          if (
+            typeof value === 'string' &&
+            value.trim()
+          ) {
+            return value.trim();
+          }
+        }
+
+        return '';
+      };
+
+      const message =
+        firstText(
+          data.error,
+          data.message,
+          detailMessage
+        ) ||
+        `The tutor request failed with status ${response.status}.`;
+
+      const code =
+        firstText(data.code) ||
+        `HTTP_${response.status}`;
+
+      return new TutorStreamError(
+        message,
+        code
+      );
     }
   } catch {
     // Use the status-based fallback below.
@@ -216,69 +174,55 @@ async function readHttpError(response: Response) {
   );
 }
 
-function requiredString(
-  record: Record<string, unknown>,
-  key: string
-) {
-  const value = record[key];
-
-  if (typeof value !== 'string' || !value.trim()) {
-    throw new TutorStreamError(
-      `The Slickk tutor response is missing ${key}.`,
-      'INVALID_TUTOR_RESPONSE'
-    );
-  }
-
-  return value.trim();
-}
-
-function finiteNumber(
-  value: unknown,
-  fallback: number
-) {
-  return typeof value === 'number' &&
-    Number.isFinite(value)
-    ? value
-    : fallback;
-}
-
-function nullableNumber(value: unknown) {
-  return typeof value === 'number' &&
-    Number.isFinite(value)
-    ? value
-    : null;
-}
-
-function nullableString(value: unknown) {
-  return typeof value === 'string'
-    ? value
-    : null;
-}
-
 function parseLearningTwin(
   value: unknown
 ): LearningTwin {
-  if (!isRecord(value)) {
-    throw new TutorStreamError(
-      'The Slickk tutor returned an invalid Learning Twin.',
-      'INVALID_TUTOR_RESPONSE'
-    );
-  }
+  const record =
+    isRecord(value)
+      ? value
+      : {};
+
+  const textValue = (
+    candidate: unknown,
+    fallback: string
+  ) =>
+    typeof candidate === 'string' &&
+    candidate.trim()
+      ? candidate.trim()
+      : fallback;
+
+  const numberValue = (
+    candidate: unknown,
+    fallback: number
+  ) =>
+    typeof candidate === 'number' &&
+    Number.isFinite(candidate)
+      ? candidate
+      : fallback;
 
   return {
-    topic: requiredString(value, 'topic'),
-    skill: requiredString(value, 'skill'),
-    misconception:
-      typeof value.misconception === 'string'
-        ? value.misconception
-        : '',
-    nextAction: requiredString(value, 'nextAction'),
-    confidence: finiteNumber(
-      value.confidence,
+    topic: textValue(
+      record.topic,
+      'General learning'
+    ),
+    skill: textValue(
+      record.skill,
+      'adaptive'
+    ),
+    misconception: textValue(
+      record.misconception,
+      ''
+    ),
+    nextAction: textValue(
+      record.nextAction,
+      "Continue the lesson and check the student's understanding."
+    ),
+    confidence: numberValue(
+      record.confidence,
       0.5
     ),
-    masteryDelta: finiteNumber(
-      value.masteryDelta,
+    masteryDelta: numberValue(
+      record.masteryDelta,
       0
     ),
   };
@@ -291,21 +235,47 @@ function parsePerformance(
     return undefined;
   }
 
+  const numberOrZero = (
+    candidate: unknown
+  ) =>
+    typeof candidate === 'number' &&
+    Number.isFinite(candidate)
+      ? candidate
+      : 0;
+
+  const numberOrNull = (
+    candidate: unknown
+  ) =>
+    typeof candidate === 'number' &&
+    Number.isFinite(candidate)
+      ? candidate
+      : null;
+
+  const stringOrNull = (
+    candidate: unknown
+  ) =>
+    typeof candidate === 'string' &&
+    candidate.trim()
+      ? candidate.trim()
+      : null;
+
   return {
-    totalMs: nullableNumber(value.totalMs),
-    loadMs: nullableNumber(value.loadMs),
-    promptTokens: finiteNumber(
-      value.promptTokens,
-      0
+    totalMs: numberOrNull(
+      value.totalMs
     ),
-    generatedTokens: finiteNumber(
-      value.generatedTokens,
-      0
+    loadMs: numberOrNull(
+      value.loadMs
     ),
-    tokensPerSecond: nullableNumber(
+    promptTokens: numberOrZero(
+      value.promptTokens
+    ),
+    generatedTokens: numberOrZero(
+      value.generatedTokens
+    ),
+    tokensPerSecond: numberOrNull(
       value.tokensPerSecond
     ),
-    doneReason: nullableString(
+    doneReason: stringOrNull(
       value.doneReason
     ),
   };
@@ -319,35 +289,148 @@ export async function streamTutorResponse(
   const authorizationHeaders =
     await getSlickkAuthorizationHeaders();
 
-  const response = await expoFetch(
-    getSlickkApiUrl('/api/tutor'),
-    {
-      method: 'POST',
-      headers: {
-        ...authorizationHeaders,
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
+  const makeRequestBody = (
+    includeConversationId: boolean,
+    includeRecentMessages: boolean
+  ) => {
+    const currentMessage =
+      request.message.trim();
+
+    const completedHistory: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+    }> = [];
+
+    let pendingUser: {
+      role: 'user';
+      content: string;
+    } | null = null;
+
+    const sourceHistory =
+      includeRecentMessages
+        ? request.recentMessages
+        : [];
+
+    sourceHistory.forEach((message) => {
+      const content = message.text.trim();
+
+      if (
+        !content ||
+        content ===
+          'Preparing a verified answer...' ||
+        content === 'Response stopped.' ||
+        content.startsWith(
+          'Slickk could not finish'
+        )
+      ) {
+        return;
+      }
+
+      if (message.role === 'student') {
+        pendingUser = {
+          role: 'user',
+          content,
+        };
+
+        return;
+      }
+
+      if (pendingUser) {
+        completedHistory.push(
+          pendingUser,
+          {
+            role: 'assistant',
+            content,
+          }
+        );
+
+        pendingUser = null;
+      }
+    });
+
+    return {
+      model: 'slickk-edu-local',
+
+      student: {
+        name: request.studentName,
+        id: request.studentId,
+        grade: request.grade,
+        curriculum: request.curriculum,
+        ...(
+          request.school
+            ? {
+                school: request.school,
+              }
+            : {}
+        ),
       },
-      signal,
-      body: JSON.stringify({
-        message: request.message,
-        studentName: request.studentName,
-        studentId: request.studentId,
-        ...(request.conversationId
+
+      language: request.language,
+      subject: request.subject,
+
+      topic:
+        request.topic?.trim() ||
+        currentMessage,
+
+      teaching_method: request.mode,
+      channel: request.channel,
+
+      stream: false,
+      max_tokens: 180,
+
+      messages: [
+        ...completedHistory,
+        {
+          role: 'user',
+          content: currentMessage,
+        },
+      ],
+
+      ...(
+        includeConversationId &&
+        request.conversationId
           ? {
-              conversationId:
+              conversation_id:
                 request.conversationId,
             }
-          : {}),
-        grade: request.grade,
-        language: request.language,
-        subject: request.subject,
-        channel: request.channel,
-        mode: request.mode,
-        recentMessages: request.recentMessages,
-      }),
-    }
-  );
+          : {}
+      ),
+    };
+  };
+
+  const sendTutorRequest = (
+    includeConversationId: boolean,
+    includeRecentMessages: boolean
+  ) =>
+    expoFetch(
+      getSlickkApiUrl('/v1/tutor/chat'),
+      {
+        method: 'POST',
+        headers: {
+          ...authorizationHeaders,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        signal,
+        body: JSON.stringify(
+          makeRequestBody(
+            includeConversationId,
+            includeRecentMessages
+          )
+        ),
+      }
+    );
+
+  let response =
+    await sendTutorRequest(false, true);
+
+  if (
+    response.status === 400 &&
+    request.recentMessages.length > 0
+  ) {
+    response =
+      await sendTutorRequest(false, false);
+  }
 
   if (!response.ok) {
     throw await readHttpError(response);
@@ -355,46 +438,156 @@ export async function streamTutorResponse(
 
   const data: unknown = await response.json();
 
-  if (
-    !isRecord(data) ||
-    !isRecord(data.metadata)
-  ) {
+  if (!isRecord(data)) {
     throw new TutorStreamError(
       'The Slickk tutor returned an invalid response.',
       'INVALID_TUTOR_RESPONSE'
     );
   }
 
-  const metadata = data.metadata;
-  const reply = requiredString(data, 'reply');
-  const learningTwin = parseLearningTwin(
-    data.learningTwin
+  const responseMetadata =
+    isRecord(data.metadata)
+      ? data.metadata
+      : {};
+
+  const tutorMetadata =
+    isRecord(data.tutor)
+      ? data.tutor
+      : {};
+
+  const messageRecord =
+    isRecord(data.message)
+      ? data.message
+      : {};
+
+  const firstText = (
+    ...values: unknown[]
+  ) => {
+    for (const value of values) {
+      if (
+        typeof value === 'string' &&
+        value.trim()
+      ) {
+        return value.trim();
+      }
+    }
+
+    return '';
+  };
+
+  const reply = firstText(
+    data.reply,
+    messageRecord.content,
+    data.content
   );
 
-  const conversationId = requiredString(
-    metadata,
-    'conversationId'
-  );
-  const messageId = requiredString(
-    metadata,
-    'messageId'
-  );
-  const requestId = requiredString(
-    metadata,
-    'requestId'
-  );
-  const provider = requiredString(
-    metadata,
-    'provider'
-  );
-  const model = requiredString(
-    metadata,
-    'model'
-  );
-  const generatedAt = requiredString(
-    metadata,
-    'generatedAt'
-  );
+  if (!reply) {
+    throw new TutorStreamError(
+      'The Slickk tutor returned an empty or unreadable answer.',
+      'INVALID_TUTOR_RESPONSE'
+    );
+  }
+
+  const grounded =
+    responseMetadata.grounded === true ||
+    responseMetadata.grounding ===
+      'curriculum' ||
+    tutorMetadata.grounded === true;
+
+  const learningTwinSource =
+    isRecord(data.learningTwin)
+      ? data.learningTwin
+      : {
+          topic:
+            firstText(
+              tutorMetadata.topic,
+              request.topic,
+              request.message
+            ) ||
+            'General learning',
+
+          skill:
+            firstText(
+              tutorMetadata.teaching_mode,
+              tutorMetadata.teaching_method,
+              request.mode
+            ) ||
+            'adaptive',
+
+          misconception: '',
+
+          nextAction:
+            grounded
+              ? "Continue the lesson and check the student's understanding."
+              : 'Upload verified lesson material before updating progress.',
+
+          confidence:
+            grounded
+              ? 0.5
+              : 0,
+
+          masteryDelta: 0,
+        };
+
+  const learningTwin =
+    parseLearningTwin(
+      learningTwinSource
+    );
+
+  const conversationId =
+    firstText(
+      responseMetadata.conversationId,
+      data.conversationId,
+      data.conversation_id
+    );
+
+  const messageId =
+    firstText(
+      responseMetadata.messageId,
+      data.id
+    ) ||
+    `tutor-message-${Date.now()}`;
+
+  const requestId =
+    firstText(
+      responseMetadata.requestId,
+      data.id
+    ) ||
+    `tutor-request-${Date.now()}`;
+
+  const provider =
+    firstText(
+      responseMetadata.provider,
+      data.backend
+    ) ||
+    'slickk-local';
+
+  const model =
+    firstText(
+      responseMetadata.model,
+      data.model
+    ) ||
+    'slickk-edu-local';
+
+  let generatedAt =
+    firstText(
+      responseMetadata.generatedAt
+    );
+
+  if (
+    !generatedAt &&
+    typeof data.created === 'number' &&
+    Number.isFinite(data.created)
+  ) {
+    generatedAt = new Date(
+      data.created * 1000
+    ).toISOString();
+  }
+
+  if (!generatedAt) {
+    generatedAt =
+      new Date().toISOString();
+  }
 
   const completedEvent: CompleteEvent = {
     type: 'complete',
@@ -407,20 +600,22 @@ export async function streamTutorResponse(
       model,
       requestId,
       generatedAt,
-      grounded:
-        metadata.grounding === 'curriculum',
-      performance: parsePerformance(
-        metadata.performance
-      ),
+      grounded,
+      performance:
+        parsePerformance(
+          responseMetadata.performance
+        ),
     },
   };
 
-  callbacks.onStart?.({
-    type: 'start',
-    requestId,
-    conversationId,
-    model,
-  });
+  if (conversationId) {
+    callbacks.onStart?.({
+      type: 'start',
+      requestId,
+      conversationId,
+      model,
+    });
+  }
 
   callbacks.onToken(reply);
   callbacks.onComplete?.(completedEvent);

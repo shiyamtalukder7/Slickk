@@ -487,6 +487,77 @@ def respiration_response_has_contradiction(
     return False
 
 
+def response_has_unbalanced_delimiters(
+    text: str,
+) -> bool:
+    """Detect incomplete bracketed model output."""
+
+    opening = {"(", "[", "{"}
+    closing = {
+        ")": "(",
+        "]": "[",
+        "}": "{",
+    }
+
+    stack: list[str] = []
+
+    for character in text:
+        if character in opening:
+            stack.append(character)
+            continue
+
+        if character not in closing:
+            continue
+
+        if (
+            not stack
+            or stack[-1] != closing[character]
+        ):
+            return True
+
+        stack.pop()
+
+    return bool(stack)
+
+
+def photosynthesis_response_has_contradiction(
+    text: str,
+) -> bool:
+    """Reject unsupported photosynthesis claims."""
+
+    suspicious_phrases = (
+        "two kinds of sunshine",
+        "indirect ultraviolet radiation",
+        "direct ultraviolet radiation",
+        "indirect solar radiation",
+        "solar radiation comes up again",
+        "radiation coming back down from the sky",
+    )
+
+    if any(
+        phrase in text
+        for phrase in suspicious_phrases
+    ):
+        return True
+
+    unsupported_terms = {
+        "ultraviolet",
+        "sunburn",
+        "latitude",
+    }
+
+    words = set(
+        re.findall(
+            r"[a-zA-Z']+",
+            text.lower(),
+        )
+    )
+
+    return bool(
+        words & unsupported_terms
+    )
+
+
 def model_response_is_low_quality(
     text: Any,
     *,
@@ -565,6 +636,21 @@ def model_response_is_low_quality(
         and latin_words
         and latin_words[-1] in incomplete_final_words
     ):
+        return True
+
+    if response_has_unbalanced_delimiters(
+        stripped
+    ):
+        return True
+
+    unfinished_lead_in = re.search(
+        r"\b(?:i am|i'm) going to "
+        r"(?:give|tell|explain)\b"
+        r"[^.!?]{0,100}$",
+        lowered,
+    )
+
+    if unfinished_lead_in:
         return True
 
     # Repeated procedural labels combined with repeated conclusions
@@ -660,6 +746,14 @@ def model_response_is_low_quality(
     if (
         "respiration" in normalized_topic
         and respiration_response_has_contradiction(lowered)
+    ):
+        return True
+
+    if (
+        "photosynthesis" in normalized_topic
+        and photosynthesis_response_has_contradiction(
+            lowered
+        )
     ):
         return True
 

@@ -130,6 +130,45 @@ def resolve_subject_id(value: str) -> str:
     return normalized.replace(" ", "-")
 
 
+CURRICULUM_LEVEL_COMPATIBILITY = {
+    "edexcel": {
+        "class-7": {
+            "lower-secondary",
+        },
+        "year-7": {
+            "lower-secondary",
+        },
+        "lower-secondary": {
+            "class-7",
+            "year-7",
+        },
+    },
+}
+
+
+def level_ids_are_compatible(
+    *,
+    curriculum_id: str,
+    requested_level_id: str,
+    document_level_id: str,
+) -> bool:
+    """Return whether two levels are safely compatible."""
+
+    if requested_level_id == document_level_id:
+        return True
+
+    compatible_document_levels = (
+        CURRICULUM_LEVEL_COMPATIBILITY
+        .get(curriculum_id, {})
+        .get(requested_level_id, set())
+    )
+
+    return (
+        document_level_id
+        in compatible_document_levels
+    )
+
+
 def resolve_level_id(value: str) -> str:
     """Normalize class and grade labels for exact matching."""
 
@@ -496,9 +535,15 @@ def retrieve_knowledge(
             continue
 
         # Never use another class or grade's lesson.
+        # Only explicitly registered curriculum-level
+        # equivalents may cross the exact-match boundary.
         if (
             requested_level_id
-            and document_level_id != requested_level_id
+            and not level_ids_are_compatible(
+                curriculum_id=requested_curriculum_id,
+                requested_level_id=requested_level_id,
+                document_level_id=document_level_id,
+            )
         ):
             continue
 

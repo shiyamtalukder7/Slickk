@@ -1,6 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import {
+  loadLearningTwinState,
+  recordLearningTwinAction,
+  resetLearningTwinState,
+  type LearningAction,
+  type LearningTwinState,
+} from '@/services/learning-twin';
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   Platform,
   Pressable,
@@ -12,13 +23,17 @@ import {
   View,
 } from 'react-native';
 
-type LearningAction = 'correct' | 'hint' | 'wrong';
-
 const clamp = (value: number, minimum = 0, maximum = 100) => {
   return Math.min(maximum, Math.max(minimum, value));
 };
 
 export default function LearningTwinScreen() {
+  const [topic, setTopic] =
+    useState('General learning');
+
+  const [skill, setSkill] =
+    useState('Understanding');
+
   const [mastery, setMastery] = useState(24);
   const [confidence, setConfidence] = useState(38);
   const [attempts, setAttempts] = useState(0);
@@ -27,6 +42,67 @@ export default function LearningTwinScreen() {
   const [hintsUsed, setHintsUsed] = useState(0);
   const [lastAction, setLastAction] =
     useState<LearningAction | null>(null);
+
+  const applyTwinState = (
+    state: LearningTwinState
+  ) => {
+    setTopic(state.topic);
+    setSkill(state.skill);
+    setMastery(state.mastery);
+    setConfidence(state.confidence);
+    setAttempts(state.attempts);
+    setCorrectAnswers(state.correctAnswers);
+    setWrongAnswers(state.wrongAnswers);
+    setHintsUsed(state.hintsUsed);
+    setLastAction(state.lastAction);
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    loadLearningTwinState()
+      .then((state) => {
+        if (active) {
+          applyTwinState(state);
+        }
+      })
+      .catch((error) => {
+        console.error(
+          'Unable to load Learning Twin:',
+          error
+        );
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const topicIcon = useMemo(() => {
+    const value =
+      `${topic} ${skill}`.toLowerCase();
+
+    if (value.includes('math')) {
+      return 'calculator-outline' as const;
+    }
+
+    if (
+      value.includes('biology') ||
+      value.includes('science') ||
+      value.includes('photo')
+    ) {
+      return 'leaf-outline' as const;
+    }
+
+    if (
+      value.includes('english') ||
+      value.includes('language')
+    ) {
+      return 'language-outline' as const;
+    }
+
+    return 'book-outline' as const;
+  }, [skill, topic]);
 
   const teachingStrategy = useMemo(() => {
     if (mastery < 30 || confidence < 30) {
@@ -109,37 +185,34 @@ export default function LearningTwinScreen() {
     return 'Complete a learning check to update your Learning Twin.';
   }, [lastAction]);
 
-  const recordLearningAction = (action: LearningAction) => {
-    setAttempts((current) => current + 1);
-    setLastAction(action);
+  const recordLearningAction = async (
+    action: LearningAction
+  ) => {
+    try {
+      const next =
+        await recordLearningTwinAction(action);
 
-    if (action === 'correct') {
-      setCorrectAnswers((current) => current + 1);
-      setMastery((current) => clamp(current + 9));
-      setConfidence((current) => clamp(current + 7));
-      return;
+      applyTwinState(next);
+    } catch (error) {
+      console.error(
+        'Unable to update Learning Twin:',
+        error
+      );
     }
-
-    if (action === 'hint') {
-      setHintsUsed((current) => current + 1);
-      setMastery((current) => clamp(current + 3));
-      setConfidence((current) => clamp(current + 2));
-      return;
-    }
-
-    setWrongAnswers((current) => current + 1);
-    setMastery((current) => clamp(current - 3));
-    setConfidence((current) => clamp(current - 6));
   };
 
-  const resetTwin = () => {
-    setMastery(24);
-    setConfidence(38);
-    setAttempts(0);
-    setCorrectAnswers(0);
-    setWrongAnswers(0);
-    setHintsUsed(0);
-    setLastAction(null);
+  const resetTwin = async () => {
+    try {
+      const next =
+        await resetLearningTwinState();
+
+      applyTwinState(next);
+    } catch (error) {
+      console.error(
+        'Unable to reset Learning Twin:',
+        error
+      );
+    }
   };
 
   return (
@@ -227,13 +300,13 @@ export default function LearningTwinScreen() {
               </Text>
 
               <Text style={styles.topicTitle}>
-                Understanding fractions
+                {topic}
               </Text>
             </View>
 
             <View style={styles.subjectIcon}>
               <Ionicons
-                name="calculator-outline"
+                name={topicIcon}
                 size={24}
                 color="#70F7D4"
               />

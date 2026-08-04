@@ -131,11 +131,23 @@ class SlickkRequestHandler(BaseHTTPRequestHandler):
             "Access-Control-Allow-Methods",
             "GET, POST, OPTIONS",
         )
+        self.send_header("Connection", "close")
         self.end_headers()
+        self.close_connection = True
 
-        if body:
-            self.wfile.write(body)
-            self.wfile.flush()
+        try:
+            if body:
+                self.wfile.write(body)
+                self.wfile.flush()
+        except (
+            BrokenPipeError,
+            ConnectionResetError,
+            ConnectionAbortedError,
+        ):
+            print(
+                "[Slickk] Client disconnected while "
+                "receiving a JSON response."
+            )
 
     def start_sse(self) -> None:
         """Start a Server-Sent Events response."""
@@ -256,7 +268,9 @@ class SlickkRequestHandler(BaseHTTPRequestHandler):
             "Access-Control-Allow-Methods",
             "GET, POST, OPTIONS",
         )
+        self.send_header("Connection", "close")
         self.end_headers()
+        self.close_connection = True
 
     def do_GET(self) -> None:
         """Handle GET routes."""

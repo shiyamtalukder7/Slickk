@@ -15,6 +15,9 @@ import {
   type StudentEducationProfile,
 } from '@/services/student-profile';
 import {
+  saveTutorLearningTwin,
+} from '@/services/learning-twin';
+import {
   resolveSlickkStudentId,
 } from '@/services/api-auth';
 import {
@@ -94,6 +97,66 @@ const LEARNING_MODES: {
   },
 ];
 
+const buildCompletedTutorHistory = (
+  sourceMessages: Message[]
+) => {
+  const history: Array<{
+    role: MessageRole;
+    text: string;
+  }> = [];
+
+  let pendingStudent: {
+    role: 'student';
+    text: string;
+  } | null = null;
+
+  for (
+    const message of sourceMessages.slice(-20)
+  ) {
+    const text = message.text.trim();
+
+    const shouldIgnore =
+      !text ||
+      text === 'Preparing a verified answer...' ||
+      text.includes('Response stopped.') ||
+      text.includes(
+        'The local tutor took too long'
+      ) ||
+      text.includes(
+        'I could not connect to Slickk LLM'
+      );
+
+    if (shouldIgnore) {
+      continue;
+    }
+
+    if (message.role === 'student') {
+      pendingStudent = {
+        role: 'student',
+        text,
+      };
+
+      continue;
+    }
+
+    if (!pendingStudent) {
+      continue;
+    }
+
+    history.push(
+      pendingStudent,
+      {
+        role: 'tutor',
+        text,
+      }
+    );
+
+    pendingStudent = null;
+  }
+
+  return history.slice(-10);
+};
+
 export default function SlickkTutorScreen() {
   const insets = useSafeAreaInsets();
 
@@ -133,6 +196,14 @@ export default function SlickkTutorScreen() {
   const listRef = useRef<FlatList<Message>>(null);
   const activeRequestRef =
     useRef<AbortController | null>(null);
+
+  const messageIdRef = useRef(0);
+
+  const createMessageId = (prefix: string) => {
+    messageIdRef.current += 1;
+
+    return `${prefix}-${messageIdRef.current}`;
+  };
 
   useEffect(() => {
     let active = true;
@@ -242,7 +313,7 @@ export default function SlickkTutorScreen() {
 
   const addTutorMessage = (text: string) => {
     const tutorMessage: Message = {
-      id: `tutor-${Date.now()}`,
+      id: createMessageId('tutor'),
       role: 'tutor',
       text,
     };
@@ -302,7 +373,7 @@ export default function SlickkTutorScreen() {
     await stopSpeech();
 
     const studentMessage: Message = {
-      id: `student-${Date.now()}`,
+      id: createMessageId('student'),
       role: 'student',
       text: messageText,
     };
@@ -312,7 +383,8 @@ export default function SlickkTutorScreen() {
       studentMessage,
     ];
 
-    const tutorMessageId = `tutor-stream-${Date.now()}`;
+    const tutorMessageId =
+      createMessageId('tutor-stream');
 
     setMessages([
       ...updatedMessages,
@@ -331,7 +403,6 @@ export default function SlickkTutorScreen() {
     const controller = new AbortController();
     activeRequestRef.current = controller;
     let timedOut = false;
-    let streamedReply = '';
 
     const timeout = setTimeout(() => {
       timedOut = true;
@@ -362,38 +433,25 @@ export default function SlickkTutorScreen() {
           school: studentProfile?.school.name,
           channel: 'typed',
           mode: selectedMode,
-          recentMessages: messages
-            .slice(-10)
-            .filter((message) => {
-              const text = message.text.trim();
-
-              return (
-                Boolean(text) &&
-                !text.includes('Response stopped.') &&
-                !text.includes(
-                  'The local tutor took too long'
-                ) &&
-                !text.includes(
-                  'I could not connect to Slickk LLM'
-                )
-              );
-            })
-            .map((message) => ({
-              role: message.role,
-              text: message.text,
-            })),
+          recentMessages:
+            buildCompletedTutorHistory(messages),
         },
         controller.signal,
         {
           onStart: (event) => {
-            setConversationId(event.conversationId);
+            setConversationId(
+              event.conversationId ||
+              undefined
+            );
           },
-          onToken: (token) => {
-            streamedReply = token;
+          onToken: () => {
             setHasReceivedToken(true);
           },
           onComplete: (event) => {
-            setConversationId(event.conversationId);
+            setConversationId(
+              event.conversationId ||
+              undefined
+            );
           },
         }
       );
@@ -406,7 +464,7 @@ export default function SlickkTutorScreen() {
         completed.metadata.grounded &&
         completed.learningTwin
       ) {
-        setLearningTwin({
+        const twinUpdate: LearningTwin = {
           topic:
             completed.learningTwin.topic ||
             'General learning',
@@ -432,7 +490,13 @@ export default function SlickkTutorScreen() {
             Number(
               completed.learningTwin.masteryDelta
             ) || 0,
-        });
+        };
+
+        setLearningTwin(twinUpdate);
+
+        await saveTutorLearningTwin(
+          twinUpdate
+        );
       } else {
         setLearningTwin(null);
       }
@@ -447,7 +511,26 @@ export default function SlickkTutorScreen() {
       const wasCancelled =
         controller.signal.aborted && !timedOut;
 
-      removeTutorMessage(tutorMessageId);
+      const shouldResetConversation =
+        error instanceof TutorStreamError &&
+        (
+          error.code === 'HTTP_400' ||
+          error.code
+            .toUpperCase()
+            .includes('CONVERSATION')
+        );
+
+      if (shouldResetConversation) {
+        setConversationId(undefined);
+      }
+
+      setMessages((currentMessages) =>
+        currentMessages.filter(
+          (message) =>
+            message.id !== tutorMessageId &&
+            message.id !== studentMessage.id
+        )
+      );
 
       if (!wasCancelled) {
         const errorMessage = timedOut
@@ -465,12 +548,9 @@ export default function SlickkTutorScreen() {
               style: 'cancel',
             },
             {
-              text: 'Retry',
+              text: 'Restore question',
               onPress: () => {
-                void sendMessage(
-                  messageText,
-                  selectedMode
-                );
+                setInput(messageText);
               },
             },
           ]
@@ -488,7 +568,7 @@ export default function SlickkTutorScreen() {
     }
   };
 
-  const useLearningMode = (
+  const applyLearningMode = (
     mode: TutorMode,
     prompt: string
   ) => {
@@ -775,7 +855,7 @@ export default function SlickkTutorScreen() {
                   key={mode.label}
                   disabled={isThinking}
                   onPress={() =>
-                    useLearningMode(
+                    applyLearningMode(
                       mode.mode,
                       mode.prompt
                     )

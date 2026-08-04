@@ -206,6 +206,52 @@ class RespirationQualityTests(unittest.TestCase):
             "class-7",
         )
 
+    def test_edexcel_class_7_can_use_approved_lower_secondary_lesson(
+        self,
+    ) -> None:
+        documents = retrieve_knowledge(
+            subject="Biology",
+            topic="Photosynthesis",
+            grade="Class 7",
+            curriculum="Pearson Edexcel",
+            language="english",
+            query=(
+                "Explain photosynthesis in simple "
+                "Class 7 language."
+            ),
+        )
+
+        self.assertTrue(documents)
+        self.assertEqual(
+            documents[0].get("id"),
+            (
+                "edexcel-lower-secondary-"
+                "biology-photosynthesis-001"
+            ),
+        )
+        self.assertEqual(
+            documents[0].get("curriculum"),
+            "edexcel",
+        )
+        self.assertEqual(
+            documents[0].get("level"),
+            "Lower Secondary",
+        )
+
+    def test_edexcel_class_8_does_not_use_class_7_compatibility(
+        self,
+    ) -> None:
+        documents = retrieve_knowledge(
+            subject="Biology",
+            topic="Photosynthesis",
+            grade="Class 8",
+            curriculum="Pearson Edexcel",
+            language="english",
+            query="Explain photosynthesis.",
+        )
+
+        self.assertEqual(documents, [])
+
     def test_chemistry_cannot_use_biology_lesson(self) -> None:
         documents = retrieve_knowledge(
             subject="Chemistry",
