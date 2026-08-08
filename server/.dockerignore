@@ -1,0 +1,9 @@
+.env
+data/
+books/
+node_modules/
+npm-debug.log*
+device-access-key.txt
+*.log
+test/
+coverage/

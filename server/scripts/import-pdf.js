@@ -4,6 +4,11 @@ const {
   importPdfFile,
 } = require('../src/documents/importer');
 
+const {
+  DEFAULT_LOCAL_TEXTBOOK_MAX_MB,
+  resolveLocalTextbookMaximumBytes,
+} = require('../src/documents/import-limits');
+
 function parseArguments(values) {
   const result = {};
 
@@ -52,6 +57,7 @@ function usage() {
     '  --school-id <profile school ID>  Required for a school-licensed copy',
     '  --student-id <student ID>         Required for a family/student-licensed copy',
     '  --ocr-language <codes>   Example: eng+ben',
+    `  --max-mb <MB>            Local CLI only. Default: ${DEFAULT_LOCAL_TEXTBOOK_MAX_MB}; hard maximum: 512`,
     '  --replace                Replace an earlier import of the same PDF',
     '  --no-ocr                 Do not OCR image-only pages',
   ].join('\n');
@@ -100,8 +106,13 @@ async function main() {
   }
 
   const filePath = path.resolve(args.file);
+const maximumBytes =
+  resolveLocalTextbookMaximumBytes(
+    args['max-mb']
+  );
   const result = await importPdfFile({
     filePath,
+  maximumBytes,
     replace: Boolean(args.replace),
     noOcr: Boolean(args['no-ocr']),
     ocrLanguage: args['ocr-language'],
@@ -158,8 +169,10 @@ async function main() {
         file: filePath,
         document: result.document,
         processing: {
-          pageCount: result.pageCount,
-          ocrPageCount: result.ocrPageCount,
+        pageCount: result.pageCount,
+        ocrPageCount: result.ocrPageCount,
+        maximumImportMb:
+          maximumBytes / 1024 / 1024,
         },
         entitlements:
           result.entitlements || undefined,

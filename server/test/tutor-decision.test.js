@@ -3,6 +3,7 @@ const test = require('node:test');
 
 const {
   createTutorDecision,
+  lessonRoadmap,
 } = require('../src/agents/tutor-decision');
 
 function plan(overrides = {}) {
@@ -103,4 +104,12 @@ test('answer attempts are evaluated before any new explanation', () => {
 
   assert.equal(decision.action.kind, 'evaluate-answer');
   assert.equal(decision.verification.required, true);
+});
+
+test('lesson roadmap advances to transfer with independent success evidence', () => {
+  const roadmap = lessonRoadmap('independent-transfer', 'Fractions');
+  assert.equal(roadmap.currentIndex, 4);
+  assert.equal(roadmap.phases[4].status, 'current');
+  assert.equal(roadmap.phases[3].status, 'complete');
+  assert.match(roadmap.successCriterion, /without a hint/);
 });

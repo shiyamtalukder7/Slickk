@@ -9,6 +9,11 @@ const {
   nextReviewDate,
   updateMastery,
 } = require('../learning/mastery');
+const {
+  DEFAULT_STRATEGY_REVALIDATION_WINDOW_MS,
+  STRATEGY_REVALIDATION_VERSION,
+  normalizeTopicKey,
+} = require('../outcomes/memory');
 
 class ConversationStoreError extends Error {
   constructor(message, code, status) {
@@ -25,6 +30,34 @@ function safeJsonParse(value) {
   } catch {
     return {};
   }
+}
+
+function safeLearningText(
+  value,
+  fallback = '',
+  maximumLength = 500
+) {
+  const text = String(value || '')
+    .replace(/\u0000/g, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
+
+  if (!text) {
+    return fallback;
+  }
+
+  const unsafe =
+    /^(?:<\?xml\b|<!doctype\b|<html\b|<xml\b|```|[\[{]\s*["']?(?:reply|message|content|answer|text)["']?\s*:)/i.test(
+      text
+    ) ||
+    /\b(?:MIND_RIGHT_DECISION_DATA|PEDAGOGY_PLAN_DATA|STUDENT_PROFILE_DATA|RELEVANT_LEARNER_MEMORY_DATA|CURRICULUM_EVIDENCE_DATA)\s*=/i.test(
+      text
+    ) ||
+    text.toLowerCase() === 'default';
+
+  return unsafe
+    ? fallback
+    : text.slice(0, maximumLength);
 }
 
 function titleFromMessage(message) {
@@ -70,7 +103,11 @@ function mapSubjectProgress(row) {
   return {
     studentId: row.student_id,
     subjectKey: row.subject_key,
-    subject: row.subject,
+    subject: safeLearningText(
+      row.subject,
+      'General learning',
+      120
+    ),
     turns: row.turns,
     confusionSignals: row.confusion_signals,
     understandingClaims: row.understanding_claims,
@@ -85,10 +122,26 @@ function mapSubjectProgress(row) {
     incorrectAnswers: row.incorrect_answers,
     hintsUsed: row.hints_used,
     supportLevel: row.support_level,
-    lastTopic: row.last_topic,
-    lastSkill: row.last_skill,
-    lastMisconception: row.last_misconception,
-    nextAction: row.next_action,
+    lastTopic: safeLearningText(
+      row.last_topic,
+      '',
+      120
+    ),
+    lastSkill: safeLearningText(
+      row.last_skill,
+      '',
+      120
+    ),
+    lastMisconception: safeLearningText(
+      row.last_misconception,
+      '',
+      500
+    ),
+    nextAction: safeLearningText(
+      row.next_action,
+      '',
+      500
+    ),
     nextReviewAt: row.next_review_at,
     lastStudiedAt: row.last_studied_at,
   };
@@ -99,10 +152,26 @@ function mapMisconception(row) {
     id: row.id,
     studentId: row.student_id,
     subjectKey: row.subject_key,
-    subject: row.subject,
-    topic: row.topic,
-    incorrectBelief: row.incorrect_belief,
-    correction: row.correction,
+    subject: safeLearningText(
+      row.subject,
+      'General learning',
+      120
+    ),
+    topic: safeLearningText(
+      row.topic,
+      '',
+      120
+    ),
+    incorrectBelief: safeLearningText(
+      row.incorrect_belief,
+      '',
+      500
+    ),
+    correction: safeLearningText(
+      row.correction,
+      '',
+      500
+    ),
     status: row.status,
     detectedAt: row.detected_at,
     lastReviewedAt: row.last_reviewed_at,
@@ -219,6 +288,45 @@ function createConversationStore(
         ON DELETE CASCADE
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS teaching_outcome_events (
+      id TEXT PRIMARY KEY,
+      evidence_key TEXT NOT NULL UNIQUE,
+      student_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
+      subject_key TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      topic TEXT NOT NULL,
+      topic_key TEXT NOT NULL,
+      representation TEXT NOT NULL,
+      outcome TEXT NOT NULL CHECK (
+        outcome IN (
+          'effective',
+          'ineffective',
+          'unknown'
+        )
+      ),
+      source TEXT NOT NULL,
+      confidence REAL NOT NULL,
+      verified_evidence INTEGER NOT NULL DEFAULT 0,
+      descriptive_only INTEGER NOT NULL DEFAULT 1,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (conversation_id)
+        REFERENCES conversations(id)
+        ON DELETE CASCADE
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS wellbeing_check_ins (
+      id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL,
+      mood TEXT NOT NULL,
+      school_day TEXT NOT NULL,
+      needs_trusted_adult INTEGER NOT NULL DEFAULT 0,
+      learning_pace TEXT NOT NULL,
+      suggested_minutes INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    ) STRICT;
+
     CREATE INDEX IF NOT EXISTS messages_conversation_order
       ON messages(conversation_id, created_at);
 
@@ -233,6 +341,25 @@ function createConversationStore(
 
     CREATE INDEX IF NOT EXISTS learning_events_student_recent
       ON learning_events(student_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS teaching_outcome_student_topic
+      ON teaching_outcome_events(
+        student_id,
+        subject_key,
+        topic_key,
+        created_at DESC
+      );
+
+    CREATE INDEX IF NOT EXISTS teaching_outcome_representation
+      ON teaching_outcome_events(
+        student_id,
+        topic_key,
+        representation,
+        created_at DESC
+      );
+
+    CREATE INDEX IF NOT EXISTS wellbeing_student_recent
+      ON wellbeing_check_ins(student_id, created_at DESC);
   `);
 
   const learnerProfileColumns = database
@@ -252,6 +379,18 @@ function createConversationStore(
   }
 
   const statements = {
+    insertCheckIn: database.prepare(`
+      INSERT INTO wellbeing_check_ins (
+        id, student_id, mood, school_day, needs_trusted_adult,
+        learning_pace, suggested_minutes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    latestCheckIn: database.prepare(`
+      SELECT mood, school_day, needs_trusted_adult, learning_pace,
+        suggested_minutes, created_at
+      FROM wellbeing_check_ins WHERE student_id = ?
+      ORDER BY created_at DESC LIMIT 1
+    `),
     findConversation: database.prepare(`
       SELECT id, student_id, title, created_at, updated_at
       FROM conversations
@@ -455,11 +594,8 @@ function createConversationStore(
           THEN excluded.last_skill
           ELSE subject_progress.last_skill
         END,
-        last_misconception = CASE
-          WHEN excluded.last_misconception <> ''
-          THEN excluded.last_misconception
-          ELSE subject_progress.last_misconception
-        END,
+        last_misconception =
+          excluded.last_misconception,
         next_action = CASE
           WHEN excluded.next_action <> ''
           THEN excluded.next_action
@@ -511,6 +647,94 @@ function createConversationStore(
         metadata_json,
         created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    insertTeachingOutcomeEvent: database.prepare(`
+      INSERT OR IGNORE INTO teaching_outcome_events (
+        id,
+        evidence_key,
+        student_id,
+        conversation_id,
+        subject_key,
+        subject,
+        topic,
+        topic_key,
+        representation,
+        outcome,
+        source,
+        confidence,
+        verified_evidence,
+        descriptive_only,
+        metadata_json,
+        created_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, 1, ?, ?
+      )
+    `),
+    teachingOutcomeMemory: database.prepare(`
+      SELECT
+        representation,
+        SUM(
+          CASE
+            WHEN outcome = 'effective'
+            THEN 1 ELSE 0
+          END
+        ) AS effective_count,
+        SUM(
+          CASE
+            WHEN outcome = 'ineffective'
+            THEN 1 ELSE 0
+          END
+        ) AS ineffective_count,
+        SUM(
+          CASE
+            WHEN outcome = 'unknown'
+            THEN 1 ELSE 0
+          END
+        ) AS unknown_count,
+        SUM(
+          CASE
+            WHEN
+              created_at >= ? AND
+              outcome = 'effective'
+            THEN 1 ELSE 0
+          END
+        ) AS recent_effective_count,
+        SUM(
+          CASE
+            WHEN
+              created_at >= ? AND
+              outcome = 'ineffective'
+            THEN 1 ELSE 0
+          END
+        ) AS recent_ineffective_count,
+        SUM(
+          CASE
+            WHEN
+              created_at >= ? AND
+              outcome = 'unknown'
+            THEN 1 ELSE 0
+          END
+        ) AS recent_unknown_count,
+        MAX(created_at) AS last_observed_at,
+        MAX(
+          CASE
+            WHEN outcome IN (
+              'effective',
+              'ineffective'
+            )
+            THEN created_at
+            ELSE NULL
+          END
+        ) AS last_decisive_at
+      FROM teaching_outcome_events
+      WHERE
+        student_id = ? AND
+        subject_key = ? AND
+        topic_key = ?
+      GROUP BY representation
+      ORDER BY last_observed_at DESC
+      LIMIT ?
     `),
     updateAssessmentEvidence: database.prepare(`
       UPDATE subject_progress
@@ -664,7 +888,10 @@ function createConversationStore(
     const activeMisconceptions =
       statements.activeMisconceptions
         .all(studentId)
-        .map(mapMisconception);
+        .map(mapMisconception)
+        .filter(
+          (item) => item.incorrectBelief
+        );
 
     return {
       studentId,
@@ -702,6 +929,432 @@ function createConversationStore(
     return getLearnerProfile(studentId);
   }
 
+  function getTeachingOutcomeMemory({
+    studentId,
+    subjectKey,
+    topic,
+    limit = 8,
+    now = Date.now(),
+    freshnessWindowMs =
+      DEFAULT_STRATEGY_REVALIDATION_WINDOW_MS,
+    minimumDecisiveEvidence = 2,
+    minimumEffectivenessRate = 0.67,
+    minimumConsistency = 0.5,
+  }) {
+    const safeStudentId =
+      safeLearningText(
+        studentId,
+        '',
+        160
+      );
+    const safeSubjectKey =
+      safeLearningText(
+        subjectKey,
+        'subject:general',
+        160
+      );
+    const topicKey =
+      normalizeTopicKey(topic);
+
+    if (!safeStudentId) {
+      return [];
+    }
+
+    const parsedNow =
+      typeof now === 'string'
+        ? Date.parse(now)
+        : Number(now);
+    const currentTime =
+      Number.isFinite(parsedNow)
+        ? parsedNow
+        : Date.now();
+    const requestedWindow =
+      Number(freshnessWindowMs);
+    const safeFreshnessWindowMs =
+      Number.isFinite(requestedWindow)
+        ? Math.min(
+            365 * 24 * 60 * 60 * 1000,
+            Math.max(
+              60 * 60 * 1000,
+              requestedWindow
+            )
+          )
+        : DEFAULT_STRATEGY_REVALIDATION_WINDOW_MS;
+    const cutoffAt =
+      new Date(
+        currentTime -
+          safeFreshnessWindowMs
+      ).toISOString();
+    const safeMinimumEvidence =
+      Math.max(
+        2,
+        Math.min(
+          20,
+          Number(
+            minimumDecisiveEvidence
+          ) || 2
+        )
+      );
+    const safeEffectivenessRate =
+      Math.min(
+        0.95,
+        Math.max(
+          0.55,
+          Number(
+            minimumEffectivenessRate
+          ) || 0.67
+        )
+      );
+    const safeConsistency =
+      Math.min(
+        1,
+        Math.max(
+          0,
+          Number(minimumConsistency) ||
+            0.5
+        )
+      );
+
+    return statements
+      .teachingOutcomeMemory
+      .all(
+        cutoffAt,
+        cutoffAt,
+        cutoffAt,
+        safeStudentId,
+        safeSubjectKey,
+        topicKey,
+        Math.min(
+          20,
+          Math.max(1, Number(limit) || 8)
+        )
+      )
+      .map((row) => {
+        const effectiveCount =
+          Math.max(
+            0,
+            Number(row.effective_count) ||
+              0
+          );
+        const ineffectiveCount =
+          Math.max(
+            0,
+            Number(
+              row.ineffective_count
+            ) || 0
+          );
+        const unknownCount =
+          Math.max(
+            0,
+            Number(row.unknown_count) ||
+              0
+          );
+        const decisiveCount =
+          effectiveCount +
+          ineffectiveCount;
+        const recentEffectiveCount =
+          Math.max(
+            0,
+            Number(
+              row.recent_effective_count
+            ) || 0
+          );
+        const recentIneffectiveCount =
+          Math.max(
+            0,
+            Number(
+              row.recent_ineffective_count
+            ) || 0
+          );
+        const recentUnknownCount =
+          Math.max(
+            0,
+            Number(
+              row.recent_unknown_count
+            ) || 0
+          );
+        const recentDecisiveCount =
+          recentEffectiveCount +
+          recentIneffectiveCount;
+        const recentTotalObservations =
+          recentDecisiveCount +
+          recentUnknownCount;
+        const recentEffectivenessRate =
+          recentDecisiveCount > 0
+            ? (
+                recentEffectiveCount /
+                recentDecisiveCount
+              )
+            : 0.5;
+        const revalidationConfidence =
+          recentDecisiveCount > 0
+            ? (
+                Math.abs(
+                  recentEffectiveCount -
+                    recentIneffectiveCount
+                ) /
+                recentDecisiveCount
+              )
+            : 0;
+        const conflictingEvidence =
+          recentEffectiveCount > 0 &&
+          recentIneffectiveCount > 0;
+        const stale =
+          decisiveCount > 0 &&
+          recentDecisiveCount === 0;
+        const enoughEvidence =
+          recentDecisiveCount >=
+          safeMinimumEvidence;
+        const consistentEnough =
+          revalidationConfidence >=
+          safeConsistency;
+        const positive =
+          recentEffectivenessRate >=
+          safeEffectivenessRate;
+        const negative =
+          recentEffectivenessRate <=
+          1 - safeEffectivenessRate;
+        const revalidationEligible =
+          enoughEvidence &&
+          consistentEnough &&
+          (positive || negative);
+        const revalidationStatus =
+          stale
+            ? 'stale'
+            : !enoughEvidence
+              ? 'insufficient'
+              : !consistentEnough
+                ? 'conflicted'
+                : positive
+                  ? 'fresh-positive'
+                  : negative
+                    ? 'fresh-negative'
+                    : 'conflicted';
+        const revalidationReason =
+          stale
+            ? 'decisive-evidence-outside-freshness-window'
+            : !enoughEvidence
+              ? 'not-enough-recent-decisive-evidence'
+              : !consistentEnough
+                ? 'recent-effective-and-ineffective-evidence-conflict'
+                : positive
+                  ? 'recent-positive-evidence-revalidated'
+                  : negative
+                    ? 'recent-negative-evidence-revalidated'
+                    : 'recent-evidence-not-decisive';
+
+        return {
+          representation:
+            safeLearningText(
+              row.representation,
+              '',
+              80
+            ),
+          effectiveCount,
+          ineffectiveCount,
+          unknownCount,
+          decisiveCount,
+          totalObservations:
+            effectiveCount +
+            ineffectiveCount +
+            unknownCount,
+          effectivenessRate:
+            decisiveCount > 0
+              ? Number(
+                  (
+                    effectiveCount /
+                    decisiveCount
+                  ).toFixed(3)
+                )
+              : 0.5,
+          eligiblePreference:
+            decisiveCount >= 2,
+          descriptiveOnly: true,
+          lastObservedAt:
+            row.last_observed_at,
+          lastDecisiveAt:
+            row.last_decisive_at,
+          recentEffectiveCount,
+          recentIneffectiveCount,
+          recentUnknownCount,
+          recentDecisiveCount,
+          recentTotalObservations,
+          recentEffectivenessRate:
+            Number(
+              recentEffectivenessRate
+                .toFixed(3)
+            ),
+          freshnessWindowMs:
+            safeFreshnessWindowMs,
+          freshnessCutoffAt:
+            cutoffAt,
+          conflictingEvidence,
+          revalidationConfidence:
+            Number(
+              revalidationConfidence
+                .toFixed(3)
+            ),
+          revalidationEligible,
+          revalidationStatus,
+          revalidationReason,
+          revalidationVersion:
+            STRATEGY_REVALIDATION_VERSION,
+        };
+      })
+      .filter(
+        (item) => item.representation
+      )
+      .sort(
+        (left, right) =>
+          String(
+            right.lastObservedAt || ''
+          ).localeCompare(
+            String(
+              left.lastObservedAt || ''
+            )
+          )
+      );
+  }
+
+  function recordTeachingOutcome({
+    evidenceKey,
+    studentId,
+    conversationId,
+    subjectKey,
+    subject,
+    topic,
+    representation,
+    outcome,
+    source,
+    confidence = 0,
+    verifiedEvidence = false,
+    metadata = {},
+  }) {
+    const allowedOutcomes =
+      new Set([
+        'effective',
+        'ineffective',
+        'unknown',
+      ]);
+    const safeEvidenceKey =
+      safeLearningText(
+        evidenceKey,
+        '',
+        500
+      );
+    const safeStudentId =
+      safeLearningText(
+        studentId,
+        '',
+        160
+      );
+    const safeConversationId =
+      safeLearningText(
+        conversationId,
+        '',
+        160
+      );
+    const safeSubjectKey =
+      safeLearningText(
+        subjectKey,
+        'subject:general',
+        160
+      );
+    const safeSubject =
+      safeLearningText(
+        subject,
+        'General learning',
+        160
+      );
+    const safeTopic =
+      safeLearningText(
+        topic,
+        safeSubject,
+        160
+      );
+    const safeRepresentation =
+      safeLearningText(
+        representation,
+        '',
+        80
+      );
+    const safeOutcome =
+      safeLearningText(
+        outcome,
+        '',
+        40
+      ).toLowerCase();
+    const safeSource =
+      safeLearningText(
+        source,
+        'unknown',
+        120
+      );
+
+    if (
+      !safeEvidenceKey ||
+      !safeStudentId ||
+      !safeConversationId ||
+      !safeRepresentation ||
+      !allowedOutcomes.has(
+        safeOutcome
+      )
+    ) {
+      throw new ConversationStoreError(
+        'Teaching outcome evidence is incomplete.',
+        'TEACHING_OUTCOME_INVALID',
+        400
+      );
+    }
+
+    requireConversation(
+      safeConversationId,
+      safeStudentId
+    );
+
+    const numericConfidence =
+      Math.min(
+        1,
+        Math.max(
+          0,
+          Number(confidence) || 0
+        )
+      );
+    const now =
+      new Date().toISOString();
+
+    statements
+      .insertTeachingOutcomeEvent
+      .run(
+        randomUUID(),
+        safeEvidenceKey,
+        safeStudentId,
+        safeConversationId,
+        safeSubjectKey,
+        safeSubject,
+        safeTopic,
+        normalizeTopicKey(safeTopic),
+        safeRepresentation,
+        safeOutcome,
+        safeSource,
+        numericConfidence,
+        verifiedEvidence ? 1 : 0,
+        JSON.stringify({
+          ...metadata,
+          descriptiveOnly: true,
+          mayChangeMastery: false,
+          mayCreateMisconception: false,
+        }),
+        now
+      );
+
+    return getTeachingOutcomeMemory({
+      studentId: safeStudentId,
+      subjectKey: safeSubjectKey,
+      topic: safeTopic,
+    });
+  }
+
   function recordLearningTurn({
     studentId,
     studentName,
@@ -716,26 +1369,38 @@ function createConversationStore(
       1,
       Math.max(0, Number(learningTwin?.confidence) || 0)
     );
+    const misconceptionPolicy =
+      pedagogyPlan.decision
+        ?.learningTwinPolicy || {};
     const verifiedMisconception =
-      confidence >= 0.5 &&
-      typeof learningTwin?.misconception === 'string'
-        ? learningTwin.misconception.trim().slice(0, 500)
+      misconceptionPolicy.mayCreateMisconception === true &&
+      learningTwin?.evidenceVerified === true &&
+      confidence >= 0.5
+        ? safeLearningText(
+            learningTwin?.misconception,
+            '',
+            500
+          )
         : '';
-    const topic = String(
-      learningTwin?.topic || pedagogyPlan.subject
-    )
-      .trim()
-      .slice(0, 120);
-    const skill = String(
-      learningTwin?.skill || 'Understanding'
-    )
-      .trim()
-      .slice(0, 120);
-    const nextAction = String(
-      learningTwin?.nextAction || ''
-    )
-      .trim()
-      .slice(0, 500);
+    const topic = safeLearningText(
+      learningTwin?.topic ||
+        pedagogyPlan.focusTopic ||
+        pedagogyPlan.subject,
+      pedagogyPlan.focusTopic ||
+        pedagogyPlan.subject ||
+        'General learning',
+      120
+    );
+    const skill = safeLearningText(
+      learningTwin?.skill,
+      'Understanding',
+      120
+    );
+    const nextAction = safeLearningText(
+      learningTwin?.nextAction,
+      '',
+      500
+    );
     const signals = pedagogyPlan.signals || {};
     const result = signals.confusion
       ? 'needs_support'
@@ -869,18 +1534,42 @@ function createConversationStore(
     }
   }
 
+  function saveCheckIn(studentId, checkIn) {
+    statements.insertCheckIn.run(
+      randomUUID(), studentId, checkIn.mood, checkIn.schoolDay,
+      checkIn.needsTrustedAdult ? 1 : 0, checkIn.learningPace,
+      checkIn.suggestedMinutes, checkIn.createdAt
+    );
+    return getLatestCheckIn(studentId);
+  }
+
+  function getLatestCheckIn(studentId) {
+    const row = statements.latestCheckIn.get(studentId);
+    return row ? {
+      mood: row.mood, schoolDay: row.school_day,
+      needsTrustedAdult: Boolean(row.needs_trusted_adult),
+      learningPace: row.learning_pace,
+      suggestedMinutes: row.suggested_minutes,
+      createdAt: row.created_at,
+    } : null;
+  }
+
   return {
     close,
     findConversation,
     getLearnerProfile,
+    getTeachingOutcomeMemory,
+    getLatestCheckIn,
     getMessages,
     getOrCreateConversation,
     getRecentMessages,
     listConversations,
     recordAssessmentEvidence,
     recordLearningTurn,
+    recordTeachingOutcome,
     requireConversation,
     saveEducationProfile,
+    saveCheckIn,
     saveMessage,
   };
 }
@@ -888,5 +1577,6 @@ function createConversationStore(
 module.exports = {
   ConversationStoreError,
   createConversationStore,
+  safeLearningText,
   titleFromMessage,
 };

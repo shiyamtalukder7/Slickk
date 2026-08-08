@@ -25,6 +25,7 @@ function shutdown(signal) {
     app.locals.conversationStore?.close();
     app.locals.curriculumStore?.close();
     app.locals.schoolStore?.close();
+    app.locals.trainingReviewStore?.close();
     process.exit(0);
   });
 

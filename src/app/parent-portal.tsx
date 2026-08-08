@@ -23,6 +23,9 @@ import {
   loadStudentProfile,
   type StudentEducationProfile,
 } from '@/services/student-profile';
+import { loadParentSummary, type ParentSummary } from '@/services/parent-summary';
+import { loadRoutineState, type RoutineState } from '@/services/routine';
+import { loadParentPreferences, saveParentPreferences } from '@/services/parent-preferences';
 
 
 type IoniconName =
@@ -37,41 +40,13 @@ type ParentAlert = {
   level: 'info' | 'attention';
 };
 
-const PARENT_ALERTS: ParentAlert[] = [
-  {
-    id: 'routine',
-    icon: 'calendar-outline',
-    title: 'Daily routine prepared',
-    description:
-      'Three learning activities are scheduled for today.',
-    time: 'Today',
-    level: 'info',
-  },
-  {
-    id: 'test',
-    icon: 'document-text-outline',
-    title: 'Weekly test preparation',
-    description:
-      'Biology and Mathematics are selected for the next test.',
-    time: 'Day 5',
-    level: 'attention',
-  },
-  {
-    id: 'material',
-    icon: 'camera-outline',
-    title: 'Textbook material may be needed',
-    description:
-      'The student can upload a page when local lesson coverage is incomplete.',
-    time: 'Open',
-    level: 'info',
-  },
-];
-
 export default function ParentPortalScreen() {
   const insets = useSafeAreaInsets();
 
   const [studentProfile, setStudentProfile] =
     useState<StudentEducationProfile | null>(null);
+  const [summary, setSummary] = useState<ParentSummary | null>(null);
+  const [routine, setRoutine] = useState<RoutineState | null>(null);
 
   const [classAlerts, setClassAlerts] =
     useState(true);
@@ -85,10 +60,15 @@ export default function ParentPortalScreen() {
   useEffect(() => {
     let isMounted = true;
 
-    loadStudentProfile()
-      .then((profile) => {
+    Promise.all([loadStudentProfile(), loadParentSummary(), loadRoutineState(), loadParentPreferences()])
+      .then(([profile, report, savedRoutine, preferences]) => {
         if (isMounted) {
           setStudentProfile(profile);
+          setSummary(report);
+          setRoutine(savedRoutine);
+          setClassAlerts(preferences.classAlerts);
+          setTestResults(preferences.testResults);
+          setWeeklyReports(preferences.weeklyReports);
         }
       })
       .catch((error) => {
@@ -121,41 +101,43 @@ export default function ParentPortalScreen() {
   const primarySubject =
     profileSubjects[0] || 'General Studies';
 
-  const weeklySubjectText =
-    profileSubjects.length >= 2
-      ? `${profileSubjects[0]} and ${profileSubjects[1]}`
-      : profileSubjects[0] ||
-        'Selected subjects';
-
-  const weeklySubjectVerb =
-    profileSubjects.length === 1
-      ? 'is'
-      : 'are';
-
-  const parentAlerts = PARENT_ALERTS.map(
-    (alert) =>
-      alert.id === 'test'
-        ? {
-            ...alert,
-            description:
-              `${weeklySubjectText} ${weeklySubjectVerb} selected for the next test.`,
-          }
-        : alert
-  );
+  const routineCompleted = Object.values(routine?.completed ?? {}).filter(Boolean).length;
+  const routineTotal = 3;
+  const routineProgress = Math.round((routineCompleted / routineTotal) * 100);
+  const parentAlerts: ParentAlert[] = [];
+  if (summary?.priorities[0]) parentAlerts.push({
+    id: 'priority', icon: 'book-outline', title: `${summary.priorities[0].subject} needs review`,
+    description: summary.priorities[0].nextAction, time: 'Next', level: 'attention',
+  });
+  if (summary && summary.verifiedAnswers === 0) parentAlerts.push({
+    id: 'evidence', icon: 'document-text-outline', title: 'Verified assessment needed',
+    description: 'Complete and submit a weekly test so progress claims use checked evidence.', time: 'This week', level: 'info',
+  });
+  if (summary?.wellbeingSupport?.needsTrustedAdult) {
+    parentAlerts.unshift({
+      id: 'trusted-adult', icon: 'heart-outline',
+      title: 'Student requested trusted-adult support',
+      description: 'Please check in with the student in person now. Slickk does not diagnose or replace human care.',
+      time: 'Now', level: 'attention',
+    });
+  }
 
 
   const showReportPreview = () => {
     Alert.alert(
-      'Weekly report preview',
-      'The final report will include attendance, completed lessons, test results, strengths, misconceptions and next-week recommendations.'
+      summary ? `${summary.studentName}'s progress` : 'Weekly report',
+      summary
+        ? `${summary.lessonsCompleted} learning turns • ${summary.verifiedAnswers} verified answers${summary.accuracyPercentage === null ? '' : ` • ${summary.accuracyPercentage}% accuracy`}\n\nHome support: ${summary.homeSupport}\n\n${summary.evidenceNotice}`
+        : 'Complete a tutor lesson and a verified weekly check to generate an evidence-based family report.'
     );
   };
 
-  const showContactOptions = () => {
-    Alert.alert(
-      'Parent communication',
-      'Secure parent messaging and tutor notifications will be connected after account authentication is implemented.'
-    );
+  const updatePreferences = (next: Partial<{ classAlerts: boolean; testResults: boolean; weeklyReports: boolean }>) => {
+    const value = { classAlerts, testResults, weeklyReports, ...next };
+    setClassAlerts(value.classAlerts);
+    setTestResults(value.testResults);
+    setWeeklyReports(value.weeklyReports);
+    void saveParentPreferences(value);
   };
 
   return (
@@ -193,21 +175,13 @@ export default function ParentPortalScreen() {
             </Text>
           </View>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Parent communication options"
-            onPress={showContactOptions}
-            style={({ pressed }) => [
-              styles.messageButton,
-              pressed && styles.pressed,
-            ]}
-          >
+          <View style={styles.messageButton}>
             <Ionicons
-              name="chatbubble-outline"
+              name="shield-checkmark-outline"
               size={21}
               color="#081426"
             />
-          </Pressable>
+          </View>
         </View>
 
         <ScrollView
@@ -257,7 +231,7 @@ export default function ParentPortalScreen() {
               </View>
 
               <Text style={styles.summaryValue}>
-                0
+                {summary?.lessonsCompleted ?? 0}
               </Text>
 
               <Text style={styles.summaryLabel}>
@@ -275,11 +249,11 @@ export default function ParentPortalScreen() {
               </View>
 
               <Text style={styles.summaryValue}>
-                1
+                {summary?.subjectsStudied ?? 0}
               </Text>
 
               <Text style={styles.summaryLabel}>
-                Day streak
+                Subjects studied
               </Text>
             </View>
 
@@ -293,11 +267,11 @@ export default function ParentPortalScreen() {
               </View>
 
               <Text style={styles.summaryValue}>
-                35
+                {summary?.verifiedAnswers ?? 0}
               </Text>
 
               <Text style={styles.summaryLabel}>
-                Planned minutes
+                Verified answers
               </Text>
             </View>
 
@@ -311,11 +285,11 @@ export default function ParentPortalScreen() {
               </View>
 
               <Text style={styles.summaryValue}>
-                1
+                {summary?.accuracyPercentage === null || summary?.accuracyPercentage === undefined ? '—' : `${summary.accuracyPercentage}%`}
               </Text>
 
               <Text style={styles.summaryLabel}>
-                Test preparing
+                Verified accuracy
               </Text>
             </View>
           </View>
@@ -332,7 +306,7 @@ export default function ParentPortalScreen() {
             </View>
 
             <Text style={styles.statusLabel}>
-              NOT STARTED
+              {routineCompleted === 0 ? 'NOT STARTED' : routineCompleted === routineTotal ? 'COMPLETE' : 'IN PROGRESS'}
             </Text>
           </View>
 
@@ -360,16 +334,16 @@ export default function ParentPortalScreen() {
 
             <View style={styles.progressHeader}>
               <Text style={styles.progressText}>
-                0 of 3 activities completed
+                {routineCompleted} of {routineTotal} activities completed
               </Text>
 
               <Text style={styles.progressValue}>
-                0%
+                {routineProgress}%
               </Text>
             </View>
 
             <View style={styles.progressTrack}>
-              <View style={styles.progressFill} />
+              <View style={[styles.progressFill, { width: `${routineProgress}%` }]} />
             </View>
           </View>
 
@@ -469,12 +443,16 @@ export default function ParentPortalScreen() {
 
             <View style={styles.reportCopy}>
               <Text style={styles.reportTitle}>
-                First report is being prepared
+                {summary?.priorities[0]
+                  ? `${summary.priorities[0].subject} needs focused support`
+                  : summary?.strengths[0]
+                    ? `${summary.strengths[0].subject} is a growing strength`
+                    : 'Build the first evidence-based report'}
               </Text>
 
               <Text style={styles.reportDescription}>
-                Complete lessons and a weekly test to
-                generate meaningful progress evidence.
+                {summary?.priorities[0]?.nextAction || summary?.homeSupport ||
+                  'Complete lessons and a verified weekly test to generate meaningful progress evidence.'}
               </Text>
 
               <View style={styles.reportTags}>
@@ -542,7 +520,7 @@ export default function ParentPortalScreen() {
 
               <Switch
                 value={classAlerts}
-                onValueChange={setClassAlerts}
+                onValueChange={(value) => updatePreferences({ classAlerts: value })}
                 trackColor={{
                   false: '#26384D',
                   true: '#356D65',
@@ -580,7 +558,7 @@ export default function ParentPortalScreen() {
 
               <Switch
                 value={testResults}
-                onValueChange={setTestResults}
+                onValueChange={(value) => updatePreferences({ testResults: value })}
                 trackColor={{
                   false: '#26384D',
                   true: '#356D65',
@@ -618,7 +596,7 @@ export default function ParentPortalScreen() {
 
               <Switch
                 value={weeklyReports}
-                onValueChange={setWeeklyReports}
+                onValueChange={(value) => updatePreferences({ weeklyReports: value })}
                 trackColor={{
                   false: '#26384D',
                   true: '#356D65',
@@ -640,9 +618,9 @@ export default function ParentPortalScreen() {
             />
 
             <Text style={styles.securityText}>
-              Parent access will require secure
-              authentication before real student data
-              or reports are shared.
+              Reports are available only to the linked
+              student or guardian account. Academic
+              claims use educator-verified evidence.
             </Text>
           </View>
         </ScrollView>

@@ -1,7 +1,39 @@
-import { Stack } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import { router, Stack, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 export default function RootLayout() {
+  useEffect(() => {
+    const openNotification = (notification: Notifications.Notification) => {
+      const url = notification.request.content.data?.url;
+      if (url === '/routine') {
+        router.push('/routine' as Href);
+      }
+    };
+
+    const initialResponse = Notifications.getLastNotificationResponse();
+    if (initialResponse?.notification) {
+      openNotification(initialResponse.notification);
+    }
+
+    const subscription =
+      Notifications.addNotificationResponseReceivedListener((response) => {
+        openNotification(response.notification);
+      });
+
+    return () => subscription.remove();
+  }, []);
+
   return (
     <>
       <StatusBar style="light" />
@@ -35,6 +67,25 @@ export default function RootLayout() {
           options={{
             title: 'Server Access',
           }}
+        />
+
+        <Stack.Screen
+          name="educator-review"
+          options={{
+            title: 'Educator Review',
+          }}
+        />
+
+        <Stack.Screen
+          name="learning-plan"
+          options={{
+            title: 'Personal Learning Plan',
+          }}
+        />
+
+        <Stack.Screen
+          name="assessment-review"
+          options={{ title: 'Assessment Review' }}
         />
 
         <Stack.Screen
@@ -90,7 +141,7 @@ export default function RootLayout() {
         <Stack.Screen
           name="camera-learn"
           options={{
-            title: 'Learning Materials',
+            title: 'Homework & Materials',
           }}
         />
       </Stack>

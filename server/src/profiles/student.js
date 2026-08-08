@@ -33,7 +33,7 @@ const CURRICULUM_TRACKS = Object.freeze([
     id: 'pearson-edexcel-international',
     name: 'Pearson Edexcel International',
     shortName: 'Pearson Edexcel',
-    curriculum: 'Pearson Edexcel International',
+    curriculum: 'Pearson Edexcel',
     version: '',
     resourceAccess: 'licensed-school-or-user',
   },

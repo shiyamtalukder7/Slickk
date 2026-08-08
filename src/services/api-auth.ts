@@ -208,6 +208,49 @@ export async function saveSlickkApiToken(
   clearSessionCache();
 }
 
+export async function verifyAndSaveSlickkApiToken(
+  value: string
+) {
+  const token = validateToken(value);
+
+  if (!(await secureStoreAvailable())) {
+    throw new SlickkCredentialError(
+      'Secure credential storage is unavailable on this device.',
+      'SECURE_STORAGE_UNAVAILABLE'
+    );
+  }
+
+  const response = await expoFetch(
+    getSlickkApiUrl('/api/session'),
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw await readSessionError(response);
+  }
+
+  const session = parseSessionIdentity(
+    await response.json()
+  );
+
+  await SecureStore.setItemAsync(
+    SLICKK_API_TOKEN_KEY,
+    token,
+    SECURE_STORE_OPTIONS
+  );
+
+  clearSessionCache();
+  cachedSession = session;
+
+  return session;
+}
+
 export async function clearSlickkApiToken() {
   clearSessionCache();
 

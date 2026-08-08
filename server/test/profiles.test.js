@@ -104,3 +104,24 @@ test('profile options cover national and international tracks for Classes 1 to 1
     true
   );
 });
+
+
+test('Pearson profile emits the canonical curriculum identity used by licensed textbooks', () => {
+  assert.deepEqual(
+    curriculumSearchFilters(
+      validProfile({
+        curriculumTrack:
+          'pearson-edexcel-international',
+        grade: 'Class 8',
+        subjects: ['Chemistry'],
+      }),
+      'Chemistry'
+    ),
+    {
+      curriculum: 'Pearson Edexcel',
+      version: '',
+      grade: 'Class 8',
+      subject: 'Chemistry',
+    }
+  );
+});

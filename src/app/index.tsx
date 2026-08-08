@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import type { Href } from 'expo-router';
+import { router } from 'expo-router';
 import {
   useEffect,
   useState,
@@ -51,7 +51,7 @@ const FEATURES: Feature[] = [
     icon: 'analytics-outline',
     title: 'Learning Twin',
     description:
-      'Tracks progress, strengths, confusion and topics that need revision.',
+      'Tracks progress, strengths, confidence and topics that need revision.',
   },
 ];
 
@@ -64,12 +64,14 @@ const LEARNING_STEPS = [
   {
     number: '02',
     title: 'Start a lesson',
-    description: 'Learn through text, voice or a textbook page.',
+    description:
+      'Learn through text, voice or a textbook page.',
   },
   {
     number: '03',
     title: 'Review progress',
-    description: 'Use routines, tests and adaptive feedback.',
+    description:
+      'Use routines, tests and adaptive feedback.',
   },
 ];
 
@@ -115,13 +117,17 @@ export default function SlickkWelcomeScreen() {
       router.push(
         profile
           ? '/explore'
-          : '/onboarding'
+          : '/onboarding',
       );
     } catch {
       router.push('/onboarding');
     } finally {
       setIsCheckingProfile(false);
     }
+  };
+
+  const openLearningTwin = () => {
+    router.push('/learning-twin' as Href);
   };
 
   return (
@@ -264,6 +270,48 @@ export default function SlickkWelcomeScreen() {
 
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel="Open Learning Twin"
+            onPress={openLearningTwin}
+            style={({ pressed }) => [
+              styles.learningTwinButton,
+              pressed &&
+                styles.learningTwinButtonPressed,
+            ]}
+          >
+            <View style={styles.learningTwinButtonIcon}>
+              <Ionicons
+                name="analytics-outline"
+                size={23}
+                color="#081426"
+              />
+            </View>
+
+            <View style={styles.learningTwinButtonCopy}>
+              <Text
+                style={styles.learningTwinButtonTitle}
+              >
+                Open Learning Twin
+              </Text>
+
+              <Text
+                style={
+                  styles.learningTwinButtonDescription
+                }
+              >
+                View mastery, confidence, retention and
+                revision progress
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={21}
+              color="#081426"
+            />
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Configure Slickk server access"
             onPress={() =>
               router.push('/access' as Href)
@@ -292,7 +340,8 @@ export default function SlickkWelcomeScreen() {
                   styles.accessButtonDescription
                 }
               >
-                Add or verify this student?s secure access key
+                Add or verify the secure access key for
+                this student
               </Text>
             </View>
 
@@ -414,7 +463,7 @@ export default function SlickkWelcomeScreen() {
             <Text style={styles.trustDescription}>
               Student profiles, learning history,
               microphone access and uploaded materials
-              remain under the user's control.
+              remain under the user&apos;s control.
             </Text>
           </View>
         </View>
@@ -632,6 +681,104 @@ const styles = StyleSheet.create({
     ],
   },
 
+  learningTwinButton: {
+    minHeight: 78,
+    marginTop: 14,
+    paddingHorizontal: 15,
+    borderRadius: 21,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#70F7D4',
+    borderWidth: 1,
+    borderColor: '#8DFFE1',
+  },
+
+  learningTwinButtonPressed: {
+    opacity: 0.8,
+    transform: [
+      {
+        scale: 0.99,
+      },
+    ],
+  },
+
+  learningTwinButtonIcon: {
+    width: 47,
+    height: 47,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor:
+      'rgba(8, 20, 38, 0.09)',
+  },
+
+  learningTwinButtonCopy: {
+    flex: 1,
+  },
+
+  learningTwinButtonTitle: {
+    color: '#081426',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
+  learningTwinButtonDescription: {
+    marginTop: 4,
+    color: '#24413F',
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+
+  accessButton: {
+    minHeight: 68,
+    marginTop: 13,
+    paddingHorizontal: 14,
+    borderRadius: 19,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#0C192A',
+    borderWidth: 1,
+    borderColor: '#1C3048',
+  },
+
+  accessButtonPressed: {
+    opacity: 0.72,
+    transform: [
+      {
+        scale: 0.99,
+      },
+    ],
+  },
+
+  accessButtonIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#102237',
+  },
+
+  accessButtonCopy: {
+    flex: 1,
+  },
+
+  accessButtonTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  accessButtonDescription: {
+    marginTop: 3,
+    color: '#7F91A7',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+
   languageRow: {
     marginTop: 15,
     flexDirection: 'row',
@@ -832,49 +979,4 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: '#52657D',
   },
-
-  accessButton: {
-    minHeight: 68,
-    marginTop: 13,
-    paddingHorizontal: 14,
-    borderRadius: 19,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#0C192A',
-    borderWidth: 1,
-    borderColor: '#1C3048',
-  },
-
-  accessButtonPressed: {
-    opacity: 0.72,
-    transform: [{ scale: 0.99 }],
-  },
-
-  accessButtonIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#102237',
-  },
-
-  accessButtonCopy: {
-    flex: 1,
-  },
-
-  accessButtonTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-
-  accessButtonDescription: {
-    marginTop: 3,
-    color: '#7F91A7',
-    fontSize: 11,
-    lineHeight: 16,
-  },
-
 });

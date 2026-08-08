@@ -1,1 +1,1 @@
-"""Slickk native runtime server and command-line tools."""
+﻿"""Server-side components for the Slickk platform."""

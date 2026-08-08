@@ -20,8 +20,24 @@ const {
   createTutorPlan,
 } = require('./pedagogy/orchestrator');
 const {
-  createTutorDecision,
-} = require('./agents/tutor-decision');
+  createMindRightDecision,
+  shouldPersistLearning,
+} = require('./mind-right/engine');
+const {
+  createMindfulnessState,
+  shouldPersistMindfulLearning,
+} = require('./mindfulness/engine');
+const {
+  applyReflectiveTeachingPlan,
+  createReflectiveTeachingState,
+} = require('./reflection/engine');
+const {
+  createTeachingOutcomeObservation,
+} = require('./outcomes/memory');
+const { buildPersonalLearningPlan } = require('./learning/plan');
+const { sessionAdaptation } = require('./learning/session-adaptation');
+const { buildParentSummary } = require('./reports/parent-summary');
+const { buildCheckIn } = require('./wellbeing/check-in');
 const {
   curriculumSearchFilters,
   findCurriculumTrack,
@@ -51,14 +67,20 @@ const {
   SchoolStoreError,
 } = require('./storage/schools');
 const {
+  createTrainingReviewStore,
+  TrainingReviewStoreError,
+} = require('./storage/training-reviews');
+const {
   createStudyPack,
 } = require('./study/tools');
 const {
   scoreAssessment,
 } = require('./assessment/scoring');
+const { buildWeeklyAssessment } = require('./assessment/weekly');
 const {
   authenticateApi,
   createRateLimiter,
+  requireRole,
   requireStudentAccess,
   securityHeaders,
 } = require('./security/api');
@@ -85,7 +107,8 @@ function errorStatus(error) {
     isModelProviderError(error) ||
     error instanceof ConversationStoreError ||
     error instanceof CurriculumStoreError ||
-    error instanceof SchoolStoreError
+    error instanceof SchoolStoreError ||
+    error instanceof TrainingReviewStoreError
   ) {
     return error.status;
   }
@@ -98,7 +121,8 @@ function errorCode(error) {
     isModelProviderError(error) ||
     error instanceof ConversationStoreError ||
     error instanceof CurriculumStoreError ||
-    error instanceof SchoolStoreError
+    error instanceof SchoolStoreError ||
+    error instanceof TrainingReviewStoreError
   ) {
     return error.code;
   }
@@ -124,6 +148,8 @@ function createApp(options = {}) {
     options.curriculumStore || createCurriculumStore();
   const schoolStore =
     options.schoolStore || createSchoolStore();
+  const trainingReviewStore =
+    options.trainingReviewStore || createTrainingReviewStore();
   const apiCredentials =
     options.apiCredentials ?? config.apiCredentials;
   seedEnglishMediumSchools(schoolStore);
@@ -131,9 +157,13 @@ function createApp(options = {}) {
   app.locals.conversationStore = conversationStore;
   app.locals.curriculumStore = curriculumStore;
   app.locals.schoolStore = schoolStore;
+  app.locals.trainingReviewStore = trainingReviewStore;
   app.locals.modelProvider = modelProvider;
 
   app.disable('x-powered-by');
+  if (config.trustProxy) {
+    app.set('trust proxy', 1);
+  }
   app.use(cors(corsOptions));
   app.use(securityHeaders);
   app.use(express.json({ limit: '1mb' }));
@@ -164,12 +194,12 @@ function createApp(options = {}) {
     next();
   });
   app.use(
-    authenticateApi(apiCredentials)
-  );
-  app.use(
     createRateLimiter({
       maximum: config.rateLimitPerMinute,
     })
+  );
+  app.use(
+    authenticateApi(apiCredentials)
   );
 
   function curriculumAccessForStudent(studentId) {
@@ -213,6 +243,9 @@ function createApp(options = {}) {
       conversationStore.getLearnerProfile(
         requestData.studentId
       );
+    const teachingSession = sessionAdaptation(
+      conversationStore.getLatestCheckIn(requestData.studentId)
+    );
     const educationProfile =
       learnerProfile.educationProfile;
     const curriculumTrack =
@@ -254,7 +287,32 @@ function createApp(options = {}) {
       requestData: effectiveRequestData,
       history,
       learnerProfile,
+      sessionAdaptation: teachingSession,
     });
+    const teachingOutcomeMemory =
+      conversationStore
+        .getTeachingOutcomeMemory({
+          studentId:
+            effectiveRequestData.studentId,
+          subjectKey:
+            basePedagogyPlan.subjectKey,
+          topic:
+            basePedagogyPlan.focusTopic,
+        });
+    const reflection =
+      createReflectiveTeachingState({
+        requestData: effectiveRequestData,
+        history,
+        learnerProfile,
+        pedagogyPlan: basePedagogyPlan,
+        outcomeMemory:
+          teachingOutcomeMemory,
+      });
+    const reflectivePedagogyPlan =
+      applyReflectiveTeachingPlan(
+        basePedagogyPlan,
+        reflection
+      );
     const curriculumEvidence =
       curriculumStore.search(
         effectiveRequestData.message,
@@ -262,7 +320,7 @@ function createApp(options = {}) {
         {
           ...curriculumSearchFilters(
             educationProfile,
-            basePedagogyPlan.subject
+            reflectivePedagogyPlan.subject
           ),
           ...curriculumAccessForStudent(
             effectiveRequestData.studentId
@@ -270,15 +328,26 @@ function createApp(options = {}) {
         }
       );
     const pedagogyPlan = {
-      ...basePedagogyPlan,
-      decision: createTutorDecision({
-        pedagogyPlan: basePedagogyPlan,
+      ...reflectivePedagogyPlan,
+      decision: createMindRightDecision({
+        pedagogyPlan:
+          reflectivePedagogyPlan,
         curriculumEvidence,
       }),
     };
+    const mindfulness = createMindfulnessState({
+      requestData: effectiveRequestData,
+      history,
+      learnerProfile,
+      pedagogyPlan,
+      curriculumEvidence,
+    });
     const enrichedRequestData = {
       ...effectiveRequestData,
       pedagogyPlan,
+      mindfulness,
+      reflection,
+      teachingOutcomeMemory,
       learnerMemory: pedagogyPlan.relevantMemory,
       curriculumEvidence,
     };
@@ -301,16 +370,86 @@ function createApp(options = {}) {
     };
   }
 
-  function recordLearning(context, learningTwin) {
-    return conversationStore.recordLearningTurn({
-      studentId: context.requestData.studentId,
-      studentName: context.requestData.studentName,
-      grade: context.requestData.grade,
-      language: context.requestData.language,
-      conversationId: context.conversation.id,
-      pedagogyPlan: context.pedagogyPlan,
-      learningTwin,
-    });
+  function recordLearning(
+    context,
+    learningTwin
+  ) {
+    const teachingOutcome =
+      createTeachingOutcomeObservation({
+        studentId:
+          context.requestData.studentId,
+        conversationId:
+          context.conversation.id,
+        studentMessageId:
+          context.studentMessage.id,
+        pedagogyPlan:
+          context.pedagogyPlan,
+        reflection:
+          context.requestData.reflection,
+        learningTwin,
+      });
+
+    if (teachingOutcome) {
+      conversationStore
+        .recordTeachingOutcome(
+          teachingOutcome
+        );
+    }
+
+    if (
+      !shouldPersistLearning(
+        context.pedagogyPlan?.decision
+      ) ||
+      !shouldPersistMindfulLearning(
+        context.requestData.mindfulness,
+        learningTwin
+      )
+    ) {
+      return context.learnerProfile;
+    }
+
+    let learnerProfile =
+      conversationStore.recordLearningTurn({
+        studentId:
+          context.requestData.studentId,
+        studentName:
+          context.requestData.studentName,
+        grade:
+          context.requestData.grade,
+        language:
+          context.requestData.language,
+        conversationId:
+          context.conversation.id,
+        pedagogyPlan:
+          context.pedagogyPlan,
+        learningTwin,
+      });
+
+    const observation =
+      learningTwin?.observation;
+
+    if (
+      learningTwin
+        ?.evidenceVerified === true &&
+      (
+        observation === 'correct' ||
+        observation === 'incorrect'
+      )
+    ) {
+      learnerProfile =
+        conversationStore
+          .recordAssessmentEvidence({
+            studentId:
+              context.requestData.studentId,
+            subjectKey:
+              context.pedagogyPlan
+                .subjectKey,
+            observation,
+            hintsUsed: 0,
+          });
+    }
+
+    return learnerProfile;
   }
 
   app.get('/', (request, response) => {
@@ -354,6 +493,68 @@ function createApp(options = {}) {
         request.principal?.subjectId || 'local-student',
       requestId: request.requestId,
     });
+  });
+
+  app.get('/api/training/reviews', (request, response) => {
+    if (!requireRole(request, response, ['teacher', 'school-admin'])) return;
+
+    const status = typeof request.query.status === 'string'
+      ? request.query.status.trim()
+      : '';
+    const items = trainingReviewStore.list({
+      status,
+      limit: request.query.limit,
+    });
+
+    return response.json({
+      items,
+      counts: trainingReviewStore.status(),
+      requestId: request.requestId,
+    });
+  });
+
+  app.post('/api/training/reviews', (request, response) => {
+    if (!requireRole(request, response, ['teacher', 'school-admin'])) return;
+
+    try {
+      const candidate = trainingReviewStore.enqueue(request.body);
+      return response.status(201).json({ candidate, requestId: request.requestId });
+    } catch (error) {
+      return response.status(errorStatus(error)).json({
+        error: error.message,
+        code: errorCode(error),
+        requestId: request.requestId,
+      });
+    }
+  });
+
+  app.put('/api/training/reviews/:candidateId', (request, response) => {
+    if (!requireRole(request, response, ['teacher', 'school-admin'])) return;
+
+    try {
+      const reviewed = trainingReviewStore.review(
+        request.params.candidateId,
+        {
+          ...request.body,
+          reviewerId: request.principal?.subjectId || request.body?.reviewerId,
+          reviewerRole: 'educator',
+        }
+      );
+      return response.json({ reviewed, requestId: request.requestId });
+    } catch (error) {
+      return response.status(errorStatus(error)).json({
+        error: error.message,
+        code: errorCode(error),
+        requestId: request.requestId,
+      });
+    }
+  });
+
+  app.get('/api/training/dataset', (request, response) => {
+    if (!requireRole(request, response, ['school-admin'])) return;
+
+    const dataset = trainingReviewStore.exportDataset();
+    return response.json({ dataset, requestId: request.requestId });
   });
 
   app.get('/health', async (request, response) => {
@@ -675,6 +876,75 @@ function createApp(options = {}) {
     }
   );
 
+  app.get('/api/students/:studentId/weekly-assessment', (request, response) => {
+    const studentId = String(request.params.studentId || '').trim();
+    if (!studentId || studentId.length > 120) {
+      return response.status(400).json({
+        error: 'Please provide a valid student ID.',
+        code: 'INVALID_STUDENT_ID',
+        requestId: request.requestId,
+      });
+    }
+    if (!requireStudentAccess(request, response, studentId)) return;
+
+    return response.json({
+      assessment: {
+        ...buildWeeklyAssessment(
+          conversationStore.getLearnerProfile(studentId),
+          {
+          questionCount: request.query.questions,
+          subjects: typeof request.query.subjects === 'string'
+            ? request.query.subjects.split(',').slice(0, 20)
+            : [],
+          }
+        ),
+        studentId,
+      },
+      requestId: request.requestId,
+    });
+  });
+
+  app.post('/api/students/:studentId/assessment-evidence', (request, response) => {
+    if (!requireRole(request, response, ['teacher', 'school-admin'])) return;
+    const studentId = String(request.params.studentId || '').trim();
+    const results = Array.isArray(request.body?.results) ? request.body.results : [];
+    if (!studentId || studentId.length > 120 || results.length === 0 || results.length > 50) {
+      return response.status(400).json({
+        error: 'Provide a valid student and between 1 and 50 verified results.',
+        code: 'INVALID_ASSESSMENT_EVIDENCE',
+        requestId: request.requestId,
+      });
+    }
+
+    try {
+      let profile;
+      for (const result of results) {
+        if (!['correct', 'incorrect'].includes(result?.observation)) {
+          throw Object.assign(new Error('Every result must be verified as correct or incorrect.'), { status: 400, code: 'ASSESSMENT_OBSERVATION_INVALID' });
+        }
+        profile = conversationStore.recordAssessmentEvidence({
+          studentId,
+          subjectKey: String(result.subjectKey || '').trim(),
+          observation: result.observation,
+          hintsUsed: result.hintsUsed,
+        });
+      }
+      return response.json({
+        ok: true,
+        verifiedBy: request.principal?.subjectId || 'local-educator',
+        verifiedCount: results.length,
+        profile,
+        requestId: request.requestId,
+      });
+    } catch (error) {
+      return response.status(errorStatus(error)).json({
+        error: error.message,
+        code: errorCode(error),
+        requestId: request.requestId,
+      });
+    }
+  });
+
   app.get(
     '/api/students/:studentId/progress',
     (request, response) => {
@@ -708,6 +978,61 @@ function createApp(options = {}) {
       });
     }
   );
+
+  app.post('/api/students/:studentId/check-ins', (request, response) => {
+    const studentId = String(request.params.studentId || '').trim();
+    if (!studentId || studentId.length > 120) {
+      return response.status(400).json({ error: 'Please provide a valid student ID.', code: 'INVALID_STUDENT_ID', requestId: request.requestId });
+    }
+    if (!requireStudentAccess(request, response, studentId)) return;
+    if (!requireRole(request, response, ['student'])) return;
+    try {
+      const checkIn = buildCheckIn(request.body);
+      conversationStore.saveCheckIn(studentId, checkIn);
+      return response.status(201).json({ checkIn, requestId: request.requestId });
+    } catch (error) {
+      return response.status(error.status || 400).json({ error: error.message, code: error.code || 'INVALID_CHECK_IN', requestId: request.requestId });
+    }
+  });
+
+  app.get('/api/students/:studentId/parent-summary', (request, response) => {
+    const studentId = String(request.params.studentId || '').trim();
+    if (!studentId || studentId.length > 120) {
+      return response.status(400).json({
+        error: 'Please provide a valid student ID.',
+        code: 'INVALID_STUDENT_ID',
+        requestId: request.requestId,
+      });
+    }
+    if (!requireStudentAccess(request, response, studentId)) return;
+
+    return response.json({
+      summary: buildParentSummary(conversationStore.getLearnerProfile(studentId), {
+        latestCheckIn: conversationStore.getLatestCheckIn(studentId),
+      }),
+      requestId: request.requestId,
+    });
+  });
+
+  app.get('/api/students/:studentId/learning-plan', (request, response) => {
+    const studentId = String(request.params.studentId || '').trim();
+    if (!studentId || studentId.length > 120) {
+      return response.status(400).json({
+        error: 'Please provide a valid student ID.',
+        code: 'INVALID_STUDENT_ID',
+        requestId: request.requestId,
+      });
+    }
+    if (!requireStudentAccess(request, response, studentId)) return;
+
+    return response.json({
+      plan: buildPersonalLearningPlan(
+        conversationStore.getLearnerProfile(studentId),
+        { limit: request.query.limit }
+      ),
+      requestId: request.requestId,
+    });
+  });
 
   app.get('/api/documents', (request, response) => {
     const studentId =
@@ -990,7 +1315,11 @@ function createApp(options = {}) {
 
     try {
       const context = prepareConversation(parsedRequest.data);
-      const { tutorResult, metrics } = await askTutor(
+      const {
+        tutorResult,
+        metrics,
+        mindfulnessAudit,
+      } = await askTutor(
         context.requestData,
         controller.signal,
         context.history,
@@ -1003,6 +1332,11 @@ function createApp(options = {}) {
         mode: parsedRequest.data.mode,
         metadata: {
           learningTwin: tutorResult,
+          mindfulnessAudit,
+          reflection:
+            context.requestData.reflection,
+          tutorDecision:
+            context.pedagogyPlan.decision,
           performance: metrics,
         },
       });
@@ -1038,6 +1372,11 @@ function createApp(options = {}) {
             context.pedagogyPlan.lessonState,
           tutorDecision:
             context.pedagogyPlan.decision,
+          mindfulness:
+            context.requestData.mindfulness,
+          reflection:
+            context.requestData.reflection,
+          mindfulnessAudit,
           generatedAt: new Date().toISOString(),
           requestId: request.requestId,
           conversationId: context.conversation.id,
@@ -1137,6 +1476,8 @@ function createApp(options = {}) {
           context.pedagogyPlan.lessonState,
         tutorDecision:
           context.pedagogyPlan.decision,
+        mindfulness:
+          context.requestData.mindfulness,
         grounded:
           context.curriculumEvidence.length > 0,
       });
@@ -1156,7 +1497,8 @@ function createApp(options = {}) {
 
       const learningTwin =
         buildStreamingLearningTwin(
-          context.requestData
+          context.requestData,
+          result
         );
       const tutorMessage = conversationStore.saveMessage({
         conversationId: context.conversation.id,
@@ -1165,6 +1507,12 @@ function createApp(options = {}) {
         mode: parsedRequest.data.mode,
         metadata: {
           learningTwin,
+          mindfulnessAudit:
+            result.mindfulnessAudit,
+          reflection:
+            context.requestData.reflection,
+          tutorDecision:
+            context.pedagogyPlan.decision,
           performance: result.metrics,
         },
       });
@@ -1194,6 +1542,12 @@ function createApp(options = {}) {
             context.pedagogyPlan.lessonState,
           tutorDecision:
             context.pedagogyPlan.decision,
+          mindfulness:
+            context.requestData.mindfulness,
+          reflection:
+            context.requestData.reflection,
+          mindfulnessAudit:
+            result.mindfulnessAudit,
           grounding: citations.length > 0
             ? 'curriculum'
             : 'model-only',

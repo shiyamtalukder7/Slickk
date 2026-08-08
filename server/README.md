@@ -55,6 +55,30 @@ npm test
 npm run check
 ```
 
+## Production container
+
+The production image runs as a non-root user, stores learner records on the
+`/data` volume, includes a model-aware health check, and refuses to start when
+role-bound API credentials or persistent storage are missing.
+
+Provide secrets through the host's secret manager or environment—not an env
+file committed to source control. The required deployment values are:
+
+- `SLICKK_API_KEYS_JSON`: role-bound credentials issued by the operator.
+- `SLICKK_MODEL_URL`: the private URL of the Ollama runtime.
+- `SLICKK_MODEL_NAME`: the installed model name (defaults to the verified
+  development model).
+
+Start the hardened service behind one trusted HTTPS reverse proxy with:
+
+```powershell
+docker compose -f compose.production.yaml up --build -d
+```
+
+`TRUST_PROXY=true` is set by the production Compose file so rate limiting uses
+the client address supplied by that single trusted proxy. Do not expose the
+container directly while that setting is enabled.
+
 ## Curriculum PDF access
 
 Official public, public-domain, and open-license PDFs are available to every

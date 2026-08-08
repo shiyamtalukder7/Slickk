@@ -2,8 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import {
   loadLearningTwinState,
-  recordLearningTwinAction,
-  resetLearningTwinState,
   type LearningAction,
   type LearningTwinState,
 } from '@/services/learning-twin';
@@ -34,8 +32,8 @@ export default function LearningTwinScreen() {
   const [skill, setSkill] =
     useState('Understanding');
 
-  const [mastery, setMastery] = useState(24);
-  const [confidence, setConfidence] = useState(38);
+  const [mastery, setMastery] = useState(0);
+  const [confidence, setConfidence] = useState(0);
   const [attempts, setAttempts] = useState(0);
   const [correctAnswers, setCorrectAnswers] = useState(0);
   const [wrongAnswers, setWrongAnswers] = useState(0);
@@ -185,36 +183,6 @@ export default function LearningTwinScreen() {
     return 'Complete a learning check to update your Learning Twin.';
   }, [lastAction]);
 
-  const recordLearningAction = async (
-    action: LearningAction
-  ) => {
-    try {
-      const next =
-        await recordLearningTwinAction(action);
-
-      applyTwinState(next);
-    } catch (error) {
-      console.error(
-        'Unable to update Learning Twin:',
-        error
-      );
-    }
-  };
-
-  const resetTwin = async () => {
-    try {
-      const next =
-        await resetLearningTwinState();
-
-      applyTwinState(next);
-    } catch (error) {
-      console.error(
-        'Unable to reset Learning Twin:',
-        error
-      );
-    }
-  };
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar
@@ -253,19 +221,13 @@ export default function LearningTwinScreen() {
             </Text>
           </View>
 
-          <Pressable
-            onPress={resetTwin}
-            style={({ pressed }) => [
-              styles.headerButton,
-              pressed && styles.pressed,
-            ]}
-          >
+          <View style={styles.headerButton}>
             <Ionicons
-              name="refresh"
+              name="shield-checkmark-outline"
               size={21}
               color="#70F7D4"
             />
-          </Pressable>
+          </View>
         </View>
 
         <View style={styles.identityCard}>
@@ -459,114 +421,6 @@ export default function LearningTwinScreen() {
             {statusMessage}
           </Text>
         </View>
-
-        <Text style={styles.sectionTitle}>
-          Update the Learning Twin
-        </Text>
-
-        <Text style={styles.sectionDescription}>
-          Test the local intelligence engine by selecting what happened during
-          the lesson.
-        </Text>
-
-        <Pressable
-          onPress={() =>
-            recordLearningAction('correct')
-          }
-          style={({ pressed }) => [
-            styles.actionButton,
-            styles.correctButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <View style={styles.actionIcon}>
-            <Ionicons
-              name="checkmark"
-              size={23}
-              color="#081426"
-            />
-          </View>
-
-          <View style={styles.actionText}>
-            <Text style={styles.actionTitle}>
-              I understood it
-            </Text>
-
-            <Text style={styles.actionDescription}>
-              Increase mastery and confidence
-            </Text>
-          </View>
-
-          <Ionicons
-            name="arrow-forward"
-            size={21}
-            color="#081426"
-          />
-        </Pressable>
-
-        <Pressable
-          onPress={() => recordLearningAction('hint')}
-          style={({ pressed }) => [
-            styles.secondaryAction,
-            pressed && styles.pressed,
-          ]}
-        >
-          <View style={styles.secondaryIcon}>
-            <Ionicons
-              name="bulb-outline"
-              size={23}
-              color="#70F7D4"
-            />
-          </View>
-
-          <View style={styles.actionText}>
-            <Text style={styles.secondaryTitle}>
-              I needed a hint
-            </Text>
-
-            <Text style={styles.secondaryDescription}>
-              Slickk will provide more guidance
-            </Text>
-          </View>
-
-          <Ionicons
-            name="chevron-forward"
-            size={20}
-            color="#65748A"
-          />
-        </Pressable>
-
-        <Pressable
-          onPress={() => recordLearningAction('wrong')}
-          style={({ pressed }) => [
-            styles.secondaryAction,
-            pressed && styles.pressed,
-          ]}
-        >
-          <View style={styles.secondaryIcon}>
-            <Ionicons
-              name="close-outline"
-              size={25}
-              color="#FF9D9D"
-            />
-          </View>
-
-          <View style={styles.actionText}>
-            <Text style={styles.secondaryTitle}>
-              I got it wrong
-            </Text>
-
-            <Text style={styles.secondaryDescription}>
-              Detect a possible misconception
-            </Text>
-          </View>
-
-          <Ionicons
-            name="chevron-forward"
-            size={20}
-            color="#65748A"
-          />
-        </Pressable>
 
         <View style={styles.futureCard}>
           <Ionicons

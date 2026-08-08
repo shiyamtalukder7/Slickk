@@ -5,6 +5,7 @@ const {
   canAccessStudent,
   credentialForToken,
   parseApiCredentials,
+  requireRole,
 } = require('../src/security/api');
 
 test('API credentials retain roles without retaining raw tokens', () => {
@@ -30,6 +31,32 @@ test('API credentials retain roles without retaining raw tokens', () => {
   );
 });
 
+test('training administration requires an educator role', () => {
+  const response = {
+    statusCode: 200,
+    payload: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.payload = payload;
+      return this;
+    },
+  };
+
+  assert.equal(
+    requireRole(
+      { principal: { role: 'student' }, requestId: 'request-1' },
+      response,
+      ['teacher', 'school-admin']
+    ),
+    false
+  );
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.payload.code, 'ROLE_ACCESS_DENIED');
+});
+
 test('student credentials are bound to their own record', () => {
   assert.equal(
     canAccessStudent(
@@ -51,6 +78,11 @@ test('student credentials are bound to their own record', () => {
     ),
     false
   );
+});
+
+test('guardian credentials are bound to their linked student record', () => {
+  assert.equal(canAccessStudent({ role: 'guardian', subjectId: 'student-1' }, 'student-1'), true);
+  assert.equal(canAccessStudent({ role: 'guardian', subjectId: 'student-1' }, 'student-2'), false);
 });
 
 test('short or unsupported credentials are rejected', () => {

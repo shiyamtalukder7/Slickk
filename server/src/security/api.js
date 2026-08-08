@@ -203,7 +203,10 @@ function canAccessStudent(principal, studentId) {
     return true;
   }
 
-  if (principal.role === 'student') {
+  if (
+    principal.role === 'student' ||
+    principal.role === 'guardian'
+  ) {
     return principal.subjectId === studentId;
   }
 
@@ -230,12 +233,28 @@ function requireStudentAccess(
   return false;
 }
 
+function requireRole(request, response, allowedRoles) {
+  const role = request.principal?.role || '';
+
+  if (role === 'local' || allowedRoles.includes(role)) {
+    return true;
+  }
+
+  response.status(403).json({
+    error: 'This credential cannot perform that action.',
+    code: 'ROLE_ACCESS_DENIED',
+    requestId: request.requestId,
+  });
+  return false;
+}
+
 module.exports = {
   authenticateApi,
   canAccessStudent,
   createRateLimiter,
   credentialForToken,
   parseApiCredentials,
+  requireRole,
   requireStudentAccess,
   securityHeaders,
   tokenDigest,

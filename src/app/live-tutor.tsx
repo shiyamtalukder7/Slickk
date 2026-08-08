@@ -5,6 +5,7 @@ import {
 } from 'expo-router';
 import * as Speech from 'expo-speech';
 import {
+  normalizeTutorReply,
   streamTutorResponse,
   TutorStreamError,
 } from '@/services/tutor-stream';
@@ -99,11 +100,11 @@ function prepareSpeechText(text: string) {
     )
     .replace(/`([^`]+)`/g, '$1')
     .replace(
-      /(\d|\))\s*[×*]\s*(?=\d|\()/g,
+      /(\d|\))\s*[Ã—*]\s*(?=\d|\()/g,
       '$1 times '
     )
     .replace(
-      /(\d|\))\s*÷\s*(?=\d|\()/g,
+      /(\d|\))\s*Ã·\s*(?=\d|\()/g,
       '$1 divided by '
     )
     .replace(
@@ -141,7 +142,7 @@ function splitSpeechText(
   }
 
   const sentences =
-    cleanText.match(/[^.!?।]+[.!?।]?/g) ?? [
+    cleanText.match(/[^.!?à¥¤]+[.!?à¥¤]?/g) ?? [
       cleanText,
     ];
 
@@ -716,15 +717,15 @@ export default function LiveTutorScreen() {
   ) => {
     const command = transcript
       .toLowerCase()
-      .replace(/[.,!?।]/g, '')
+      .replace(/[.,!?à¥¤]/g, '')
       .trim();
 
     const stopCommands = [
       'stop',
       'stop listening',
       'end session',
-      'থামো',
-      'বন্ধ করো',
+      'à¦¥à¦¾à¦®à§‹',
+      'à¦¬à¦¨à§à¦§ à¦•à¦°à§‹',
     ];
 
     if (
@@ -740,7 +741,7 @@ export default function LiveTutorScreen() {
       'repeat',
       'say that again',
       'repeat that',
-      'আবার বলো',
+      'à¦†à¦¬à¦¾à¦° à¦¬à¦²à§‹',
     ];
 
     if (
@@ -757,7 +758,7 @@ export default function LiveTutorScreen() {
       'slower',
       'speak slower',
       'speak slowly',
-      'ধীরে বলো',
+      'à¦§à§€à¦°à§‡ à¦¬à¦²à§‹',
     ];
 
     if (
@@ -776,7 +777,7 @@ export default function LiveTutorScreen() {
     const normalSpeedCommands = [
       'normal speed',
       'speak normally',
-      'স্বাভাবিকভাবে বলো',
+      'à¦¸à§à¦¬à¦¾à¦­à¦¾à¦¬à¦¿à¦•à¦­à¦¾à¦¬à§‡ à¦¬à¦²à§‹',
     ];
 
     if (
@@ -845,13 +846,45 @@ export default function LiveTutorScreen() {
     appendMessage('student', cleanText);
 
     const tutorMessageId =
-      appendMessage('tutor', '…');
+      appendMessage(
+        'tutor',
+        'Preparing...'
+      );
 
     const controller =
       new AbortController();
     tutorRequestRef.current = controller;
     let timedOut = false;
     let streamedReply = '';
+
+    const visibleStreamedReply = () => {
+      const rawReply = streamedReply.trim();
+
+      if (!rawReply) {
+        return '';
+      }
+
+      const normalizedReply =
+        normalizeTutorReply(rawReply);
+
+      const startsAsStructuredData =
+        rawReply.startsWith('{') ||
+        rawReply.startsWith('[') ||
+        rawReply.startsWith('```') ||
+        rawReply.startsWith('"');
+
+      // An incomplete JSON wrapper cannot be
+      // parsed yet. Keep showing the neutral
+      // placeholder instead of exposing JSON.
+      if (
+        startsAsStructuredData &&
+        normalizedReply === rawReply
+      ) {
+        return '';
+      }
+
+      return normalizedReply;
+    };
 
     const timeout = setTimeout(() => {
       timedOut = true;
@@ -873,10 +906,10 @@ export default function LiveTutorScreen() {
           grade:
             studentProfile?.grade ?? 'Class 7',
           language:
-            recognitionLanguage === 'bn-BD'
-              ? 'bangla'
-              : studentProfile?.teachingLanguage ??
-                'english',
+            // The education profile controls the tutor's answer language.
+            // Recognition language controls speech input only.
+            studentProfile?.teachingLanguage ??
+              'english',
           curriculum:
             studentProfile?.curriculumTrack ??
             'nctb-english-version',
@@ -895,10 +928,16 @@ export default function LiveTutorScreen() {
           },
           onToken: (token) => {
             streamedReply += token;
-            updateMessage(
-              tutorMessageId,
-              streamedReply
-            );
+
+            const visibleReply =
+              visibleStreamedReply();
+
+            if (visibleReply) {
+              updateMessage(
+                tutorMessageId,
+                visibleReply
+              );
+            }
           },
           onComplete: (event) => {
             conversationIdRef.current =
@@ -908,8 +947,12 @@ export default function LiveTutorScreen() {
       );
 
       const reply =
-        completed.reply.trim() ||
-        streamedReply.trim() ||
+        normalizeTutorReply(
+          completed.reply
+        ) ||
+        normalizeTutorReply(
+          streamedReply
+        ) ||
         'I could not prepare an answer. Please ask again another way.';
 
       updateMessage(tutorMessageId, reply);
@@ -956,14 +999,17 @@ export default function LiveTutorScreen() {
         error
       );
 
+      const partialReply =
+        visibleStreamedReply();
+
       const wasCancelled =
         controller.signal.aborted && !timedOut;
 
       if (wasCancelled) {
         updateMessage(
           tutorMessageId,
-          streamedReply.trim()
-            ? `${streamedReply.trim()}\n\nResponse stopped.`
+          partialReply
+            ? `${partialReply}\n\nResponse stopped.`
             : 'Response stopped.'
         );
 
@@ -982,8 +1028,8 @@ export default function LiveTutorScreen() {
 
         updateMessage(
           tutorMessageId,
-          streamedReply.trim()
-            ? `${streamedReply.trim()}\n\n${responseMessage}`
+          partialReply
+            ? `${partialReply}\n\n${responseMessage}`
             : responseMessage
         );
 
@@ -1325,7 +1371,7 @@ export default function LiveTutorScreen() {
               {recognitionLanguage ===
               'en-US'
                 ? 'EN'
-                : 'বাংলা'}
+                : 'à¦¬à¦¾à¦‚à¦²à¦¾'}
             </Text>
           </Pressable>
         </View>
@@ -1672,8 +1718,8 @@ export default function LiveTutorScreen() {
           </View>
 
           <Text style={styles.footerText}>
-            Voice commands: repeat • slower •
-            normal speed • stop
+            Voice commands: repeat â€¢ slower â€¢
+            normal speed â€¢ stop
           </Text>
         </View>
       </KeyboardAvoidingView>

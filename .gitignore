@@ -48,6 +48,7 @@ IMPLEMENTATION_PLAN.md
 
 # local backend secrets, private learner data, and curriculum files
 server/.env
+server/device-access-key.txt
 server/data/*.db
 server/data/*.db-*
 server/data/*.sqlite

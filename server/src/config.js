@@ -71,7 +71,27 @@ function readApiCredentials() {
   );
 }
 
-const config = Object.freeze({
+function validateProductionConfig(value) {
+  if (value.nodeEnv !== 'production') {
+    return value;
+  }
+
+  if (!Array.isArray(value.apiCredentials) || value.apiCredentials.length === 0) {
+    throw new Error(
+      'Production requires at least one role-bound SLICKK_API_KEYS_JSON credential.'
+    );
+  }
+
+  if (value.databasePath === ':memory:') {
+    throw new Error(
+      'Production requires a persistent SLICKK_DATABASE_PATH.'
+    );
+  }
+
+  return value;
+}
+
+const config = Object.freeze(validateProductionConfig({
   nodeEnv: process.env.NODE_ENV?.trim() || 'development',
   port: readInteger('PORT', 3000, 1, 65535),
   modelProvider:
@@ -130,8 +150,9 @@ const config = Object.freeze({
     10,
     5000
   ),
+  trustProxy: readBoolean('TRUST_PROXY', false),
   databasePath: resolveDatabasePath(),
-});
+}));
 
 module.exports = {
   config,
@@ -139,4 +160,5 @@ module.exports = {
   readApiCredentials,
   readInteger,
   resolveDatabasePath,
+  validateProductionConfig,
 };

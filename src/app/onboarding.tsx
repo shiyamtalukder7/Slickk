@@ -98,6 +98,8 @@ export default function OnboardingScreen() {
       schoolQuery.trim().length < 2 ||
       selectedSchool?.name === schoolQuery.trim()
     ) {
+      // Clear stale remote results when the directory query is inactive.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSchoolResults([]);
       setIsSearching(false);
       return;

@@ -1,33 +1,50 @@
+// SLICKK UI FOUNDATION V1
 import { Ionicons } from '@expo/vector-icons';
 import { router, type Href } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentProps,
 } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Platform,
   Pressable,
-  SafeAreaView,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import {
+  SafeAreaView,
+} from 'react-native-safe-area-context';
 
+import { SlickkBottomNav } from '@/components/slickk-bottom-nav';
 import { getSlickkApiUrl } from '@/config/api';
+import {
+  SlickkColors,
+  SlickkRadius,
+  SlickkSpace,
+  SlickkTypography,
+} from '@/constants/slickk-design';
+import {
+  submitDailyCheckIn,
+  type CheckInMood,
+  type SchoolDay,
+} from '@/services/daily-check-in';
 import {
   loadStudentProfile,
   type StudentEducationProfile,
 } from '@/services/student-profile';
 
-type IoniconName =
+type IconName =
   ComponentProps<typeof Ionicons>['name'];
 
 type ServerStatus =
@@ -35,191 +52,72 @@ type ServerStatus =
   | 'online'
   | 'offline';
 
-type Subject = {
+type QuickAction = {
   id: string;
-  icon: IoniconName;
   title: string;
-  subtitle: string;
+  description: string;
+  icon: IconName;
+  accent: 'mint' | 'blue' | 'amber';
+  open: () => void;
 };
 
-type MoodOption = {
-  id: string;
-  icon: IoniconName;
+const MOODS: {
+  id: CheckInMood;
   label: string;
-};
-
-type RoutineItem = {
-  id: string;
-  icon: IoniconName;
-  title: string;
-  subtitle: string;
-};
-
-const DEFAULT_SUBJECTS: Subject[] = [
-  {
-    id: 'mathematics',
-    icon: 'calculator-outline',
-    title: 'Mathematics',
-    subtitle: 'Numbers, algebra and geometry',
-  },
-  {
-    id: 'science',
-    icon: 'flask-outline',
-    title: 'Science',
-    subtitle: 'Physics, chemistry and biology',
-  },
-  {
-    id: 'english',
-    icon: 'language-outline',
-    title: 'English',
-    subtitle: 'Reading, writing and grammar',
-  },
-  {
-    id: 'social-studies',
-    icon: 'earth-outline',
-    title: 'Social Studies',
-    subtitle: 'History, geography and society',
-  },
-];
-
-const SUBJECT_DETAILS: Record<
-  string,
-  Pick<Subject, 'icon' | 'subtitle'>
-> = {
-  Mathematics: {
-    icon: 'calculator-outline',
-    subtitle: 'Numbers, algebra and geometry',
-  },
-  English: {
-    icon: 'language-outline',
-    subtitle: 'Reading, writing and grammar',
-  },
-  Bangla: {
-    icon: 'book-outline',
-    subtitle: 'Language, literature and writing',
-  },
-  Science: {
-    icon: 'flask-outline',
-    subtitle: 'Scientific ideas and investigation',
-  },
-  Physics: {
-    icon: 'magnet-outline',
-    subtitle: 'Matter, energy, forces and motion',
-  },
-  Chemistry: {
-    icon: 'beaker-outline',
-    subtitle: 'Materials, reactions and experiments',
-  },
-  Biology: {
-    icon: 'leaf-outline',
-    subtitle: 'Living systems and the environment',
-  },
-  'Higher Mathematics': {
-    icon: 'stats-chart-outline',
-    subtitle: 'Advanced mathematics',
-  },
-  Accounting: {
-    icon: 'receipt-outline',
-    subtitle: 'Financial records and reporting',
-  },
-  Economics: {
-    icon: 'trending-up-outline',
-    subtitle: 'Markets, choices and development',
-  },
-  History: {
-    icon: 'time-outline',
-    subtitle: 'People, events and evidence',
-  },
-  'Geography and Environment': {
-    icon: 'earth-outline',
-    subtitle: 'Places, people and environment',
-  },
-  'Information and Communication Technology': {
-    icon: 'laptop-outline',
-    subtitle: 'Computing and digital systems',
-  },
-};
-
-const MOOD_OPTIONS: MoodOption[] = [
+  icon: IconName;
+}[] = [
   {
     id: 'great',
-    icon: 'happy-outline',
-    label: 'Great',
+    label: 'Ready',
+    icon: 'sunny-outline',
   },
   {
     id: 'okay',
-    icon: 'remove-circle-outline',
     label: 'Okay',
+    icon: 'partly-sunny-outline',
   },
   {
     id: 'tired',
-    icon: 'moon-outline',
     label: 'Tired',
+    icon: 'moon-outline',
   },
 ];
 
-export default function SlickkDashboardScreen() {
-  const insets = useSafeAreaInsets();
+function initials(name: string) {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
 
+  if (parts.length === 0) {
+    return 'S';
+  }
+
+  return parts
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
+}
+
+export default function SlickkDashboardScreen() {
   const [serverStatus, setServerStatus] =
     useState<ServerStatus>('checking');
 
-  const [studentProfile, setStudentProfile] =
+  const [profile, setProfile] =
     useState<StudentEducationProfile | null>(null);
 
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [savingMood, setSavingMood] =
+    useState(false);
+
   const [selectedMood, setSelectedMood] =
-    useState<string | null>(null);
+    useState<CheckInMood | null>(null);
 
-  const [routineDone, setRoutineDone] =
-    useState<Record<string, boolean>>({});
-
-  const dashboardSubjects = useMemo(() => {
-    if (!studentProfile?.subjects.length) {
-      return DEFAULT_SUBJECTS;
-    }
-
-    return studentProfile.subjects.map((title) => {
-      const details = SUBJECT_DETAILS[title];
-
-      return {
-        id: title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-'),
-        title,
-        icon: details?.icon ?? 'school-outline',
-        subtitle:
-          details?.subtitle ??
-          `Personalized ${title} lessons`,
-      };
-    });
-  }, [studentProfile]);
-
-  const nextSubject =
-    dashboardSubjects[0] ?? DEFAULT_SUBJECTS[0];
-
-  const routineItems = useMemo<RoutineItem[]>(
-    () => [
-      {
-        id: 'lesson',
-        icon: 'school-outline',
-        title: `${nextSubject.title} lesson`,
-        subtitle: '20 minute guided lesson',
-      },
-      {
-        id: 'materials',
-        icon: 'camera-outline',
-        title: 'Review school materials',
-        subtitle: 'Upload one page or question',
-      },
-      {
-        id: 'revision',
-        icon: 'refresh-outline',
-        title: 'Quick revision',
-        subtitle: '5 minute understanding check',
-      },
-    ],
-    [nextSubject.title]
-  );
+  const entrance = useRef(
+    new Animated.Value(0)
+  ).current;
 
   const checkServer = useCallback(async () => {
     setServerStatus('checking');
@@ -248,56 +146,36 @@ export default function SlickkDashboardScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    void checkServer();
+  const loadHome = useCallback(async () => {
+    const [loadedProfile] =
+      await Promise.all([
+        loadStudentProfile().catch(
+          () => null
+        ),
+        checkServer(),
+      ]);
+
+    setProfile(loadedProfile);
   }, [checkServer]);
 
   useEffect(() => {
-    let active = true;
+    void loadHome();
 
-    loadStudentProfile()
-      .then((profile) => {
-        if (active) {
-          setStudentProfile(profile);
-        }
-      })
-      .catch(() => {
-        // The dashboard remains usable offline.
-      });
+    Animated.timing(entrance, {
+      toValue: 1,
+      duration: 420,
+      useNativeDriver: true,
+    }).start();
+  }, [entrance, loadHome]);
 
-    return () => {
-      active = false;
-    };
-  }, []);
+  const refresh = async () => {
+    setRefreshing(true);
 
-  const openTypedTutor = (subject?: string) => {
-    if (subject) {
-      router.push({
-        pathname: '/tutor',
-        params: {
-          subject,
-        },
-      });
-
-      return;
+    try {
+      await loadHome();
+    } finally {
+      setRefreshing(false);
     }
-
-    router.push('/tutor');
-  };
-
-  const openLiveTutor = (subject?: string) => {
-    if (subject) {
-      router.push({
-        pathname: '/live-tutor',
-        params: {
-          subject,
-        },
-      });
-
-      return;
-    }
-
-    router.push('/live-tutor');
   };
 
   const openCamera = () => {
@@ -309,758 +187,763 @@ export default function SlickkDashboardScreen() {
     });
   };
 
-  const openProgress = () => {
-    router.push('/twin');
+  const openHomework = () => {
+    router.push({
+      pathname: '/camera-learn',
+      params: {
+        mode: 'library',
+      },
+    });
   };
 
-  const openProfile = () => {
-    router.push('/onboarding');
-  };
+  const primarySubject =
+    profile?.subjects?.[0] || 'Mathematics';
 
-  const openAccess = () => {
-    router.push('/access' as Href);
-  };
+  const firstName =
+    profile?.studentName
+      ?.trim()
+      .split(/\s+/)[0] || 'Student';
 
-  const showRoutineSetup = () => {
-    router.push('/routine' as Href);
-  };
+  const fullName =
+    profile?.studentName || 'Student';
 
-  const showWeeklyTest = () => {
-    router.push('/weekly-test' as Href);
-  };
+  const schoolContext = [
+    profile?.grade || 'Class 7',
+    profile?.school?.name || 'School profile',
+  ].join('  •  ');
 
-  const showParentPortal = () => {
-    router.push('/parent-portal' as Href);
-  };
+  const statusColor =
+    serverStatus === 'online'
+      ? SlickkColors.mint
+      : serverStatus === 'offline'
+        ? SlickkColors.danger
+        : SlickkColors.amber;
 
-  const selectMood = (mood: MoodOption) => {
-    setSelectedMood(mood.id);
+  const statusLabel =
+    serverStatus === 'online'
+      ? 'Private tutor online'
+      : serverStatus === 'offline'
+        ? 'Private tutor offline'
+        : 'Checking private tutor';
 
-    const message =
-      mood.id === 'great'
-        ? 'That is wonderful. Let us use that energy for a strong lesson.'
-        : mood.id === 'tired'
-          ? 'Thank you for telling me. Slickk will keep the next activity calm and manageable.'
-          : 'Thank you for checking in. We will take today one step at a time.';
+  const quickActions =
+    useMemo<QuickAction[]>(
+      () => [
+        {
+          id: 'live-tutor',
+          title: 'Live Tutor',
+          description:
+            'Speak naturally and learn step by step.',
+          icon: 'mic',
+          accent: 'mint',
+          open: () =>
+            router.push({
+              pathname: '/live-tutor',
+              params: {
+                subject: primarySubject,
+              },
+            }),
+        },
+        {
+          id: 'camera-learning',
+          title: 'Camera Learning',
+          description:
+            'Capture a page, diagram, or equation.',
+          icon: 'camera',
+          accent: 'blue',
+          open: openCamera,
+        },
+        {
+          id: 'homework',
+          title: 'Homework Upload',
+          description:
+            'Choose images, PDFs, or documents.',
+          icon: 'cloud-upload-outline',
+          accent: 'amber',
+          open: openHomework,
+        },
+        {
+          id: 'typed-tutor',
+          title: 'Typed Tutor',
+          description:
+            'Ask privately using text and materials.',
+          icon: 'chatbubble-ellipses',
+          accent: 'mint',
+          open: () =>
+            router.push({
+              pathname: '/tutor',
+              params: {
+                subject: primarySubject,
+              },
+            }),
+        },
+      ],
+      [primarySubject]
+    );
+
+  const learningTools: {
+    id: string;
+    label: string;
+    detail: string;
+    icon: IconName;
+    open: () => void;
+  }[] = [
+    {
+      id: 'learning-twin',
+      label: 'Learning Twin',
+      detail:
+        'Verified strengths, gaps, and reviews',
+      icon: 'analytics-outline',
+      open: () =>
+        router.push('/twin' as Href),
+    },
+    {
+      id: 'learning-plan',
+      label: 'My Learning Plan',
+      detail:
+        'Priorities based on real learning evidence',
+      icon: 'sparkles-outline',
+      open: () =>
+        router.push('/learning-plan' as Href),
+    },
+    {
+      id: 'weekly-test',
+      label: 'Practice & Assessment',
+      detail:
+        'Check recent understanding',
+      icon: 'document-text-outline',
+      open: () =>
+        router.push('/weekly-test' as Href),
+    },
+    {
+      id: 'routine',
+      label: 'Study Routine',
+      detail:
+        'Plan reminders and daily study',
+      icon: 'calendar-outline',
+      open: () =>
+        router.push('/routine' as Href),
+    },
+    {
+      id: 'parent',
+      label: 'Parent Portal',
+      detail:
+        'Verified summaries and family support',
+      icon: 'people-outline',
+      open: () =>
+        router.push('/parent-portal' as Href),
+    },
+    {
+      id: 'privacy',
+      label: 'Privacy & Server',
+      detail:
+        'Private connection and account access',
+      icon: 'shield-checkmark-outline',
+      open: () =>
+        router.push('/access' as Href),
+    },
+  ];
+
+  const selectMood = (
+    mood: CheckInMood
+  ) => {
+    setSelectedMood(mood);
 
     Alert.alert(
-      `You feel ${mood.label.toLowerCase()}`,
-      message
+      'How was school?',
+      'Choose the closest answer. Slickk records only the selected learning categories.',
+      [
+        {
+          text: 'Difficult',
+          onPress: () =>
+            void saveMood(
+              mood,
+              'difficult'
+            ),
+        },
+        {
+          text: 'Mixed',
+          onPress: () =>
+            void saveMood(mood, 'mixed'),
+        },
+        {
+          text: 'Good',
+          onPress: () =>
+            void saveMood(mood, 'good'),
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
     );
   };
 
-  const toggleRoutineItem = (itemId: string) => {
-    setRoutineDone((current) => ({
-      ...current,
-      [itemId]: !current[itemId],
-    }));
+  const saveMood = async (
+    mood: CheckInMood,
+    schoolDay: SchoolDay
+  ) => {
+    if (savingMood) {
+      return;
+    }
+
+    setSavingMood(true);
+
+    try {
+      const result = await submitDailyCheckIn({
+        mood,
+        schoolDay,
+        needsTrustedAdult: false,
+      });
+
+      Alert.alert(
+        `${result.suggestedMinutes}-minute plan`,
+        result.response
+      );
+    } catch (error) {
+      Alert.alert(
+        'Check-in not saved',
+        error instanceof Error
+          ? error.message
+          : 'Please try again.'
+      );
+    } finally {
+      setSavingMood(false);
+    }
   };
 
-  const completedRoutineCount =
-    routineItems.filter(
-      (item) => routineDone[item.id]
-    ).length;
-
-  const firstName =
-    studentProfile?.studentName
-      .trim()
-      .split(/\s+/)[0] || 'Student';
-
-  const grade =
-    studentProfile?.grade || 'Class 7';
-
-  const schoolName =
-    studentProfile?.school?.name || 'Your school';
-
-  const todayLabel = new Date().toLocaleDateString(
-    'en-US',
-    {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric',
+  const requestTrustedAdult = async () => {
+    if (savingMood) {
+      return;
     }
-  );
 
-  const serverColor =
-    serverStatus === 'online'
-      ? '#70F7D4'
-      : serverStatus === 'offline'
-        ? '#FF8E8E'
-        : '#FFD36E';
+    setSavingMood(true);
 
-  const serverLabel =
-    serverStatus === 'online'
-      ? 'Local AI ready'
-      : serverStatus === 'offline'
-        ? 'Local AI offline'
-        : 'Checking local AI';
+    try {
+      const result = await submitDailyCheckIn({
+        mood: 'upset',
+        schoolDay: 'difficult',
+        needsTrustedAdult: true,
+      });
+
+      Alert.alert(
+        'Please get human support now',
+        result.response
+      );
+    } catch (error) {
+      Alert.alert(
+        'Support request not saved',
+        error instanceof Error
+          ? error.message
+          : 'Please speak with a trusted adult now.'
+      );
+    } finally {
+      setSavingMood(false);
+    }
+  };
+
+  const translateY =
+    entrance.interpolate({
+      inputRange: [0, 1],
+      outputRange: [14, 0],
+    });
 
   return (
-    <SafeAreaView
-      style={[
-        styles.safeArea,
-        {
-          paddingTop:
-            Platform.OS === 'android'
-              ? insets.top
-              : 0,
-        },
-      ]}
-    >
+    <SafeAreaView style={styles.safeArea}>
       <StatusBar
         barStyle="light-content"
-        backgroundColor="#07101E"
+        backgroundColor={
+          SlickkColors.background
+        }
       />
 
       <View style={styles.screen}>
-        <ScrollView
-          contentContainerStyle={styles.container}
-          showsVerticalScrollIndicator={false}
+        <Animated.View
+          style={[
+            styles.contentLayer,
+            {
+              opacity: entrance,
+              transform: [{ translateY }],
+            },
+          ]}
         >
-          <View style={styles.topGlow} />
+          <ScrollView
+            contentContainerStyle={
+              styles.content
+            }
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() =>
+                  void refresh()
+                }
+                tintColor={
+                  SlickkColors.mint
+                }
+              />
+            }
+            showsVerticalScrollIndicator={
+              false
+            }
+          >
+            <View style={styles.glowOne} />
+            <View style={styles.glowTwo} />
 
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.dateText}>
-                {todayLabel.toUpperCase()}
-              </Text>
+            <View style={styles.header}>
+              <View style={styles.headerCopy}>
+                <Text style={styles.date}>
+                  {new Date()
+                    .toLocaleDateString(
+                      'en-US',
+                      {
+                        weekday: 'long',
+                        month: 'short',
+                        day: 'numeric',
+                      }
+                    )
+                    .toUpperCase()}
+                </Text>
 
-              <Text style={styles.greeting}>
-                Hi, {firstName}
-              </Text>
+                <Text style={styles.greeting}>
+                  Learn with purpose,
+                  {'\n'}
+                  {firstName}.
+                </Text>
 
-              <Text style={styles.profileContext}>
-                {grade} | {schoolName}
-              </Text>
+                <Text style={styles.context}>
+                  {schoolContext}
+                </Text>
+              </View>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open student profile"
+                onPress={() =>
+                  router.push(
+                    '/onboarding' as Href
+                  )
+                }
+                style={({ pressed }) => [
+                  styles.avatar,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.avatarText}>
+                  {initials(fullName)}
+                </Text>
+              </Pressable>
             </View>
 
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Open student profile"
-              onPress={openProfile}
+              accessibilityLabel="Refresh private tutor status"
+              onPress={() =>
+                void checkServer()
+              }
               style={({ pressed }) => [
-                styles.profileButton,
+                styles.statusPill,
                 pressed && styles.pressed,
               ]}
             >
-              <Ionicons
-                name="person-outline"
-                size={24}
-                color="#70F7D4"
-              />
-            </Pressable>
-          </View>
+              {serverStatus ===
+              'checking' ? (
+                <ActivityIndicator
+                  size="small"
+                  color={statusColor}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.statusDot,
+                    {
+                      backgroundColor:
+                        statusColor,
+                    },
+                  ]}
+                />
+              )}
 
-          <Pressable
-            onPress={() => void checkServer()}
-            style={({ pressed }) => [
-              styles.serverPill,
-              pressed && styles.pressed,
-            ]}
-          >
-            {serverStatus === 'checking' ? (
-              <ActivityIndicator
-                size="small"
-                color={serverColor}
-              />
-            ) : (
-              <View
+              <Text
                 style={[
-                  styles.serverDot,
+                  styles.statusText,
                   {
-                    backgroundColor: serverColor,
+                    color: statusColor,
                   },
                 ]}
-              />
-            )}
+              >
+                {statusLabel}
+              </Text>
 
-            <Text
-              style={[
-                styles.serverText,
-                {
-                  color: serverColor,
-                },
-              ]}
-            >
-              {serverLabel}
-            </Text>
-
-            <Ionicons
-              name="refresh-outline"
-              size={16}
-              color="#71849B"
-            />
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open secure server access"
-            onPress={openAccess}
-            style={({ pressed }) => [
-              styles.accessCard,
-              pressed && styles.pressed,
-            ]}
-          >
-            <View style={styles.accessCardIcon}>
               <Ionicons
-                name="key-outline"
-                size={20}
-                color="#70F7D4"
+                name="refresh-outline"
+                size={15}
+                color={
+                  SlickkColors.textMuted
+                }
               />
-            </View>
+            </Pressable>
 
-            <View style={styles.accessCardCopy}>
-              <Text style={styles.accessCardTitle}>
-                Secure server access
-              </Text>
-
-              <Text style={styles.accessCardText}>
-                Verify or replace this student?s access key
-              </Text>
-            </View>
-
-            <Ionicons
-              name="chevron-forward"
-              size={19}
-              color="#71849B"
-            />
-          </Pressable>
-
-          <View style={styles.checkInCard}>
-            <View style={styles.cardTitleRow}>
-              <View style={styles.sectionIcon}>
-                <Ionicons
-                  name="heart-outline"
-                  size={21}
-                  color="#70F7D4"
-                />
-              </View>
-
-              <View style={styles.cardTitleContent}>
-                <Text style={styles.eyebrow}>
-                  DAILY CHECK-IN
-                </Text>
-
-                <Text style={styles.cardTitle}>
-                  How are you doing today?
-                </Text>
-              </View>
-            </View>
-
-            <Text style={styles.cardDescription}>
-              Tell Slickk how you feel before starting
-              your lessons.
-            </Text>
-
-            <View style={styles.moodRow}>
-              {MOOD_OPTIONS.map((mood) => {
-                const isSelected =
-                  selectedMood === mood.id;
-
-                return (
-                  <Pressable
-                    key={mood.id}
-                    onPress={() => selectMood(mood)}
-                    style={({ pressed }) => [
-                      styles.moodButton,
-                      isSelected &&
-                        styles.moodButtonSelected,
-                      pressed && styles.pressed,
-                    ]}
+            <View style={styles.hero}>
+              <View style={styles.heroTop}>
+                <View
+                  style={styles.heroBadge}
+                >
+                  <Ionicons
+                    name="sparkles"
+                    size={14}
+                    color={
+                      SlickkColors.blackInk
+                    }
+                  />
+                  <Text
+                    style={styles.heroBadgeText}
                   >
-                    <Ionicons
-                      name={mood.icon}
-                      size={21}
-                      color={
-                        isSelected
-                          ? '#081426'
-                          : '#70F7D4'
-                      }
-                    />
+                    MIND RIGHT LEARNING
+                  </Text>
+                </View>
 
-                    <Text
-                      style={[
-                        styles.moodText,
-                        isSelected &&
-                          styles.moodTextSelected,
-                      ]}
-                    >
-                      {mood.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          <View style={styles.nextLessonCard}>
-            <View style={styles.nextLessonTop}>
-              <View>
-                <Text style={styles.nextLabel}>
-                  NEXT LESSON
-                </Text>
-
-                <Text style={styles.nextSubject}>
-                  {nextSubject.title}
-                </Text>
+                <View style={styles.privateBadge}>
+                  <Ionicons
+                    name="lock-closed"
+                    size={13}
+                    color={SlickkColors.mint}
+                  />
+                  <Text
+                    style={styles.privateBadgeText}
+                  >
+                    PRIVATE
+                  </Text>
+                </View>
               </View>
 
-              <View style={styles.readyBadge}>
-                <View style={styles.readyDot} />
+              <Text style={styles.heroTitle}>
+                Your universal learning space
+              </Text>
 
-                <Text style={styles.readyText}>
-                  READY
-                </Text>
-              </View>
-            </View>
+              <Text style={styles.heroText}>
+                Ask, speak, photograph, upload,
+                practise, and continue from your
+                verified learning profile.
+              </Text>
 
-            <Text style={styles.nextDescription}>
-              Start a calm, curriculum-guided lesson
-              based on your grade and school profile.
-            </Text>
-
-            <View style={styles.lessonActions}>
               <Pressable
+                accessibilityRole="button"
                 onPress={() =>
-                  openTypedTutor(nextSubject.title)
+                  router.push({
+                    pathname: '/live-tutor',
+                    params: {
+                      subject:
+                        primarySubject,
+                    },
+                  })
                 }
                 style={({ pressed }) => [
-                  styles.primaryLessonButton,
-                  pressed && styles.buttonPressed,
+                  styles.heroButton,
+                  pressed &&
+                    styles.buttonPressed,
                 ]}
               >
-                <Ionicons
-                  name="chatbubble-ellipses-outline"
-                  size={20}
-                  color="#081426"
-                />
+                <View
+                  style={styles.heroButtonIcon}
+                >
+                  <Ionicons
+                    name="mic"
+                    size={21}
+                    color={
+                      SlickkColors.blackInk
+                    }
+                  />
+                </View>
 
-                <Text style={styles.primaryButtonText}>
-                  Start lesson
-                </Text>
+                <View
+                  style={styles.heroButtonCopy}
+                >
+                  <Text
+                    style={styles.heroButtonTitle}
+                  >
+                    Start Live Tutor
+                  </Text>
+                  <Text
+                    style={styles.heroButtonText}
+                  >
+                    Begin with {primarySubject}
+                  </Text>
+                </View>
 
                 <Ionicons
                   name="arrow-forward"
-                  size={19}
-                  color="#081426"
+                  size={21}
+                  color={
+                    SlickkColors.blackInk
+                  }
                 />
               </Pressable>
+            </View>
+
+            <View style={styles.sectionHeading}>
+              <View>
+                <Text style={styles.eyebrow}>
+                  LEARNING MODES
+                </Text>
+                <Text style={styles.sectionTitle}>
+                  Choose how to learn
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.quickGrid}>
+              {quickActions.map(
+                (action) => {
+                  const accentStyle =
+                    action.accent === 'mint'
+                      ? styles.accentMint
+                      : action.accent ===
+                          'blue'
+                        ? styles.accentBlue
+                        : styles.accentAmber;
+
+                  const iconColor =
+                    action.accent === 'mint'
+                      ? SlickkColors.mint
+                      : action.accent ===
+                          'blue'
+                        ? SlickkColors.blue
+                        : SlickkColors.amber;
+
+                  return (
+                    <Pressable
+                      key={action.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        action.title
+                      }
+                      onPress={action.open}
+                      style={({ pressed }) => [
+                        styles.quickCard,
+                        pressed &&
+                          styles.cardPressed,
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.quickIcon,
+                          accentStyle,
+                        ]}
+                      >
+                        <Ionicons
+                          name={action.icon}
+                          size={23}
+                          color={iconColor}
+                        />
+                      </View>
+
+                      <Text
+                        style={styles.quickTitle}
+                      >
+                        {action.title}
+                      </Text>
+
+                      <Text
+                        style={styles.quickText}
+                      >
+                        {action.description}
+                      </Text>
+
+                      <View
+                        style={styles.quickArrow}
+                      >
+                        <Ionicons
+                          name="arrow-forward"
+                          size={17}
+                          color={
+                            SlickkColors.textSoft
+                          }
+                        />
+                      </View>
+                    </Pressable>
+                  );
+                }
+              )}
+            </View>
+
+            <View style={styles.checkIn}>
+              <View style={styles.checkInHeader}>
+                <View
+                  style={styles.checkInIcon}
+                >
+                  <Ionicons
+                    name="heart-outline"
+                    size={20}
+                    color={SlickkColors.mint}
+                  />
+                </View>
+
+                <View
+                  style={styles.checkInCopy}
+                >
+                  <Text style={styles.eyebrow}>
+                    DAILY CHECK-IN
+                  </Text>
+                  <Text
+                    style={styles.checkInTitle}
+                  >
+                    How is your energy?
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.moodRow}>
+                {MOODS.map((mood) => {
+                  const selected =
+                    selectedMood === mood.id;
+
+                  return (
+                    <Pressable
+                      key={mood.id}
+                      disabled={savingMood}
+                      onPress={() =>
+                        selectMood(mood.id)
+                      }
+                      style={({ pressed }) => [
+                        styles.mood,
+                        selected &&
+                          styles.moodSelected,
+                        pressed &&
+                          styles.pressed,
+                      ]}
+                    >
+                      <Ionicons
+                        name={mood.icon}
+                        size={19}
+                        color={
+                          selected
+                            ? SlickkColors
+                                .blackInk
+                            : SlickkColors.mint
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.moodText,
+                          selected &&
+                            styles.moodTextSelected,
+                        ]}
+                      >
+                        {mood.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
 
               <Pressable
+                disabled={savingMood}
                 onPress={() =>
-                  openLiveTutor(nextSubject.title)
+                  void requestTrustedAdult()
                 }
                 style={({ pressed }) => [
-                  styles.voiceLessonButton,
+                  styles.support,
                   pressed && styles.pressed,
                 ]}
               >
                 <Ionicons
-                  name="mic-outline"
-                  size={21}
-                  color="#70F7D4"
+                  name="hand-left-outline"
+                  size={17}
+                  color={SlickkColors.amber}
                 />
+                <Text
+                  style={styles.supportText}
+                >
+                  I need help from a trusted
+                  adult now
+                </Text>
               </Pressable>
             </View>
-          </View>
 
-          <View style={styles.sectionHeading}>
-            <View>
-              <Text style={styles.eyebrow}>
-                DAILY ROUTINE
-              </Text>
-
-              <Text style={styles.sectionTitle}>
-                Today&apos;s learning plan
-              </Text>
+            <View style={styles.sectionHeading}>
+              <View>
+                <Text style={styles.eyebrow}>
+                  YOUR LEARNING
+                </Text>
+                <Text style={styles.sectionTitle}>
+                  Plan, practise, and review
+                </Text>
+              </View>
             </View>
 
-            <Pressable onPress={showRoutineSetup}>
-              <Text style={styles.sectionAction}>
-                Edit
-              </Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.routineCard}>
-            <View style={styles.routineProgressRow}>
-              <Text style={styles.routineProgressText}>
-                {completedRoutineCount} of{' '}
-                {routineItems.length} complete
-              </Text>
-
-              <Text style={styles.routinePercentage}>
-                {Math.round(
-                  (completedRoutineCount /
-                    routineItems.length) *
-                    100
-                )}
-                %
-              </Text>
-            </View>
-
-            <View style={styles.progressTrack}>
-              <View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: `${
-                      (completedRoutineCount /
-                        routineItems.length) *
-                      100
-                    }%`,
-                  },
-                ]}
-              />
-            </View>
-
-            {routineItems.map((item) => {
-              const isDone =
-                Boolean(routineDone[item.id]);
-
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() =>
-                    toggleRoutineItem(item.id)
-                  }
-                  style={({ pressed }) => [
-                    styles.routineItem,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.routineCheck,
-                      isDone &&
-                        styles.routineCheckDone,
+            <View style={styles.tools}>
+              {learningTools.map(
+                (tool, index) => (
+                  <Pressable
+                    key={tool.id}
+                    accessibilityRole="button"
+                    onPress={tool.open}
+                    style={({ pressed }) => [
+                      styles.toolRow,
+                      index ===
+                        learningTools.length -
+                          1 &&
+                        styles.toolRowLast,
+                      pressed && styles.pressed,
                     ]}
                   >
+                    <View
+                      style={styles.toolIcon}
+                    >
+                      <Ionicons
+                        name={tool.icon}
+                        size={21}
+                        color={
+                          SlickkColors.mint
+                        }
+                      />
+                    </View>
+
+                    <View
+                      style={styles.toolCopy}
+                    >
+                      <Text
+                        style={styles.toolLabel}
+                      >
+                        {tool.label}
+                      </Text>
+                      <Text
+                        style={styles.toolDetail}
+                      >
+                        {tool.detail}
+                      </Text>
+                    </View>
+
                     <Ionicons
-                      name={
-                        isDone
-                          ? 'checkmark'
-                          : item.icon
-                      }
-                      size={18}
+                      name="chevron-forward"
+                      size={19}
                       color={
-                        isDone
-                          ? '#081426'
-                          : '#70F7D4'
+                        SlickkColors.textMuted
                       }
                     />
-                  </View>
-
-                  <View style={styles.routineContent}>
-                    <Text
-                      style={[
-                        styles.routineTitle,
-                        isDone &&
-                          styles.routineTitleDone,
-                      ]}
-                    >
-                      {item.title}
-                    </Text>
-
-                    <Text style={styles.routineSubtitle}>
-                      {item.subtitle}
-                    </Text>
-                  </View>
-
-                  <Ionicons
-                    name="chevron-forward"
-                    size={18}
-                    color="#52657D"
-                  />
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <View style={styles.sectionHeading}>
-            <View>
-              <Text style={styles.eyebrow}>
-                LEARNING TOOLS
-              </Text>
-
-              <Text style={styles.sectionTitle}>
-                Continue learning
-              </Text>
+                  </Pressable>
+                )
+              )}
             </View>
-          </View>
 
-          <View style={styles.actionGrid}>
-            <Pressable
-              onPress={() => openTypedTutor()}
-              style={({ pressed }) => [
-                styles.actionCard,
-                pressed && styles.pressed,
-              ]}
-            >
-              <View style={styles.actionIcon}>
-                <Ionicons
-                  name="school-outline"
-                  size={24}
-                  color="#70F7D4"
-                />
-              </View>
-
-              <Text style={styles.actionTitle}>
-                AI Tutor
-              </Text>
-
-              <Text style={styles.actionSubtitle}>
-                Learn step by step
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={openCamera}
-              style={({ pressed }) => [
-                styles.actionCard,
-                pressed && styles.pressed,
-              ]}
-            >
-              <View style={styles.actionIcon}>
-                <Ionicons
-                  name="camera-outline"
-                  size={24}
-                  color="#70F7D4"
-                />
-              </View>
-
-              <Text style={styles.actionTitle}>
-                Camera Learn
-              </Text>
-
-              <Text style={styles.actionSubtitle}>
-                Scan a book page
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={showWeeklyTest}
-              style={({ pressed }) => [
-                styles.actionCard,
-                pressed && styles.pressed,
-              ]}
-            >
-              <View style={styles.actionIcon}>
-                <Ionicons
-                  name="document-text-outline"
-                  size={24}
-                  color="#70F7D4"
-                />
-              </View>
-
-              <Text style={styles.actionTitle}>
-                Weekly Test
-              </Text>
-
-              <Text style={styles.actionSubtitle}>
-                Test recent topics
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={openProgress}
-              style={({ pressed }) => [
-                styles.actionCard,
-                pressed && styles.pressed,
-              ]}
-            >
-              <View style={styles.actionIcon}>
-                <Ionicons
-                  name="analytics-outline"
-                  size={24}
-                  color="#70F7D4"
-                />
-              </View>
-
-              <Text style={styles.actionTitle}>
-                Progress
-              </Text>
-
-              <Text style={styles.actionSubtitle}>
-                View your Learning Twin
-              </Text>
-            </Pressable>
-          </View>
-
-          <Pressable
-            onPress={openProgress}
-            style={({ pressed }) => [
-              styles.progressCard,
-              pressed && styles.pressed,
-            ]}
-          >
-            <View style={styles.progressCardIcon}>
+            <View style={styles.privacyNote}>
               <Ionicons
-                name="analytics-outline"
-                size={25}
-                color="#081426"
+                name="shield-checkmark"
+                size={19}
+                color={SlickkColors.mint}
               />
-            </View>
-
-            <View style={styles.progressCardContent}>
-              <Text style={styles.eyebrow}>
-                LEARNING PROGRESS
-              </Text>
-
-              <Text style={styles.progressCardTitle}>
-                Your Learning Twin is getting ready
-              </Text>
-
-              <Text style={styles.progressCardText}>
-                Complete lessons and understanding
-                checks to reveal strengths and topics
-                that need revision.
+              <Text
+                style={styles.privacyNoteText}
+              >
+                Student learning data remains
+                under your control and uses your
+                connected Slickk server.
               </Text>
             </View>
+          </ScrollView>
+        </Animated.View>
 
-            <Ionicons
-              name="chevron-forward"
-              size={21}
-              color="#70F7D4"
-            />
-          </Pressable>
-
-          <Pressable
-            onPress={showParentPortal}
-            style={({ pressed }) => [
-              styles.parentCard,
-              pressed && styles.pressed,
-            ]}
-          >
-            <View style={styles.parentIcon}>
-              <Ionicons
-                name="people-outline"
-                size={23}
-                color="#70F7D4"
-              />
-            </View>
-
-            <View style={styles.parentContent}>
-              <Text style={styles.parentTitle}>
-                Parent Portal
-              </Text>
-
-              <Text style={styles.parentDescription}>
-                Reports, class alerts and test results
-                will appear here.
-              </Text>
-            </View>
-
-            <View style={styles.soonBadge}>
-              <Text style={styles.soonText}>
-                OPEN
-              </Text>
-            </View>
-          </Pressable>
-
-          <View style={styles.privacyRow}>
-            <Ionicons
-              name="shield-checkmark-outline"
-              size={18}
-              color="#70F7D4"
-            />
-
-            <Text style={styles.privacyText}>
-              Student learning data remains under your
-              control.
-            </Text>
-          </View>
-        </ScrollView>
-
-        <View
-          style={[
-            styles.bottomNavigation,
-            {
-              paddingBottom: Math.max(
-                insets.bottom,
-                12
-              ),
-              minHeight:
-                67 +
-                Math.max(
-                  insets.bottom,
-                  12
-                ),
-            },
-          ]}
-        >
-          <Pressable style={styles.navItemActive}>
-            <Ionicons
-              name="home"
-              size={22}
-              color="#081426"
-            />
-
-            <Text style={styles.navTextActive}>
-              Home
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => openTypedTutor()}
-            style={styles.navItem}
-          >
-            <Ionicons
-              name="school-outline"
-              size={22}
-              color="#71849B"
-            />
-
-            <Text style={styles.navText}>
-              Learn
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={showRoutineSetup}
-            style={styles.navItem}
-          >
-            <Ionicons
-              name="calendar-outline"
-              size={22}
-              color="#71849B"
-            />
-
-            <Text style={styles.navText}>
-              Routine
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={openProgress}
-            style={styles.navItem}
-          >
-            <Ionicons
-              name="analytics-outline"
-              size={22}
-              color="#71849B"
-            />
-
-            <Text style={styles.navText}>
-              Progress
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={openProfile}
-            style={styles.navItem}
-          >
-            <Ionicons
-              name="person-outline"
-              size={22}
-              color="#71849B"
-            />
-
-            <Text style={styles.navText}>
-              Profile
-            </Text>
-          </Pressable>
-        </View>
+        <SlickkBottomNav active="home" />
       </View>
     </SafeAreaView>
   );
@@ -1069,644 +952,416 @@ export default function SlickkDashboardScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#07101E',
+    backgroundColor: SlickkColors.background,
   },
-
   screen: {
     flex: 1,
-    backgroundColor: '#07101E',
+    backgroundColor: SlickkColors.background,
   },
-
-  container: {
-    paddingHorizontal: 20,
+  contentLayer: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: SlickkSpace.large,
     paddingTop:
-      Platform.OS === 'android' ? 10 : 16,
-    paddingBottom: 38,
+      Platform.OS === 'android' ? 10 : 18,
+    paddingBottom: SlickkSpace.xxlarge,
     overflow: 'hidden',
   },
-
-  topGlow: {
+  glowOne: {
     position: 'absolute',
-    width: 280,
-    height: 280,
-    borderRadius: 140,
+    top: -180,
+    right: -130,
+    width: 330,
+    height: 330,
+    borderRadius: 165,
     backgroundColor:
-      'rgba(61, 241, 200, 0.07)',
-    top: -160,
-    right: -110,
+      'rgba(112, 247, 212, 0.075)',
   },
-
+  glowTwo: {
+    position: 'absolute',
+    top: 420,
+    left: -220,
+    width: 340,
+    height: 340,
+    borderRadius: 170,
+    backgroundColor:
+      'rgba(109, 168, 255, 0.045)',
+  },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    gap: 16,
   },
-
-  headerText: {
+  headerCopy: {
     flex: 1,
-    paddingRight: 14,
   },
-
-  dateText: {
-    color: '#70F7D4',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.5,
+  date: {
+    color: SlickkColors.mint,
+    ...SlickkTypography.eyebrow,
   },
-
   greeting: {
-    marginTop: 6,
-    color: '#FFFFFF',
-    fontSize: 31,
-    lineHeight: 38,
-    fontWeight: '800',
+    marginTop: 7,
+    color: SlickkColors.text,
+    ...SlickkTypography.title,
   },
-
-  profileContext: {
-    marginTop: 4,
-    color: '#8A9AAF',
-    fontSize: 14,
-    lineHeight: 20,
+  context: {
+    marginTop: 7,
+    color: SlickkColors.textMuted,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
   },
-
-  profileButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 17,
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0D1A2C',
+    backgroundColor: SlickkColors.surfaceStrong,
     borderWidth: 1,
-    borderColor: '#20324A',
+    borderColor: SlickkColors.borderStrong,
   },
-
-  pressed: {
-    opacity: 0.72,
+  avatarText: {
+    color: SlickkColors.mint,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '900',
   },
-
-  buttonPressed: {
-    transform: [
-      {
-        scale: 0.98,
-      },
-    ],
-  },
-
-  serverPill: {
-    marginTop: 18,
+  statusPill: {
     alignSelf: 'flex-start',
     minHeight: 34,
+    marginTop: 17,
     paddingHorizontal: 12,
-    borderRadius: 17,
+    borderRadius: SlickkRadius.pill,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#0C192A',
+    backgroundColor: SlickkColors.surfaceSoft,
     borderWidth: 1,
-    borderColor: '#1A2D45',
+    borderColor: SlickkColors.border,
   },
-
-  serverDot: {
-    width: 8,
-    height: 8,
+  statusDot: {
+    width: 7,
+    height: 7,
     borderRadius: 4,
   },
-
-  serverText: {
-    fontSize: 12,
-    fontWeight: '700',
+  statusText: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '800',
   },
-
-  checkInCard: {
+  hero: {
     marginTop: 18,
-    padding: 18,
-    borderRadius: 24,
-    backgroundColor: '#0C192A',
+    padding: 20,
+    borderRadius: SlickkRadius.xlarge,
+    backgroundColor: '#0D2830',
     borderWidth: 1,
-    borderColor: '#1C3048',
+    borderColor: '#285B59',
   },
-
-  cardTitleRow: {
+  heroTop: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
   },
-
-  sectionIcon: {
+  heroBadge: {
+    minHeight: 29,
+    paddingHorizontal: 10,
+    borderRadius: SlickkRadius.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: SlickkColors.mint,
+  },
+  heroBadgeText: {
+    color: SlickkColors.blackInk,
+    fontSize: 8,
+    lineHeight: 11,
+    fontWeight: '900',
+    letterSpacing: 0.9,
+  },
+  privateBadge: {
+    minHeight: 29,
+    paddingHorizontal: 10,
+    borderRadius: SlickkRadius.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor:
+      'rgba(112, 247, 212, 0.08)',
+  },
+  privateBadgeText: {
+    color: SlickkColors.mint,
+    fontSize: 8,
+    lineHeight: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  heroTitle: {
+    marginTop: 17,
+    maxWidth: 310,
+    color: SlickkColors.text,
+    fontSize: 25,
+    lineHeight: 31,
+    fontWeight: '900',
+    letterSpacing: -0.55,
+  },
+  heroText: {
+    marginTop: 9,
+    maxWidth: 330,
+    color: '#A0B8BA',
+    ...SlickkTypography.body,
+  },
+  heroButton: {
+    minHeight: 61,
+    marginTop: 19,
+    paddingHorizontal: 13,
+    borderRadius: 19,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    backgroundColor: SlickkColors.mint,
+  },
+  heroButtonIcon: {
+    width: 39,
+    height: 39,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor:
+      'rgba(7, 20, 33, 0.10)',
+  },
+  heroButtonCopy: {
+    flex: 1,
+  },
+  heroButtonTitle: {
+    color: SlickkColors.blackInk,
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '900',
+  },
+  heroButtonText: {
+    marginTop: 2,
+    color: '#315B58',
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '700',
+  },
+  sectionHeading: {
+    marginTop: 28,
+    marginBottom: 13,
+  },
+  eyebrow: {
+    color: SlickkColors.mint,
+    ...SlickkTypography.eyebrow,
+  },
+  sectionTitle: {
+    marginTop: 4,
+    color: SlickkColors.text,
+    ...SlickkTypography.sectionTitle,
+  },
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 12,
+  },
+  quickCard: {
+    width: '48.3%',
+    minHeight: 174,
+    padding: 15,
+    borderRadius: SlickkRadius.large,
+    backgroundColor: SlickkColors.surface,
+    borderWidth: 1,
+    borderColor: SlickkColors.border,
+  },
+  quickIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accentMint: {
+    backgroundColor:
+      'rgba(112, 247, 212, 0.10)',
+  },
+  accentBlue: {
+    backgroundColor:
+      'rgba(109, 168, 255, 0.11)',
+  },
+  accentAmber: {
+    backgroundColor:
+      'rgba(255, 212, 122, 0.10)',
+  },
+  quickTitle: {
+    marginTop: 15,
+    color: SlickkColors.text,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '900',
+  },
+  quickText: {
+    marginTop: 5,
+    paddingRight: 6,
+    color: SlickkColors.textMuted,
+    fontSize: 11,
+    lineHeight: 17,
+    fontWeight: '500',
+  },
+  quickArrow: {
+    position: 'absolute',
+    right: 14,
+    bottom: 13,
+  },
+  checkIn: {
+    marginTop: 21,
+    padding: 17,
+    borderRadius: SlickkRadius.large,
+    backgroundColor: SlickkColors.surfaceSoft,
+    borderWidth: 1,
+    borderColor: SlickkColors.border,
+  },
+  checkInHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  checkInIcon: {
     width: 40,
     height: 40,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor:
-      'rgba(112, 247, 212, 0.10)',
+      'rgba(112, 247, 212, 0.09)',
   },
-
-  cardTitleContent: {
+  checkInCopy: {
     flex: 1,
-    marginLeft: 12,
   },
-
-  eyebrow: {
-    color: '#70F7D4',
-    fontSize: 10,
-    lineHeight: 14,
-    fontWeight: '900',
-    letterSpacing: 1.4,
-  },
-
-  cardTitle: {
-    marginTop: 3,
-    color: '#FFFFFF',
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '700',
-  },
-
-  cardDescription: {
-    marginTop: 13,
-    color: '#8A9AAF',
-    fontSize: 14,
+  checkInTitle: {
+    marginTop: 2,
+    color: SlickkColors.text,
+    fontSize: 16,
     lineHeight: 21,
+    fontWeight: '900',
   },
-
   moodRow: {
-    marginTop: 16,
+    marginTop: 14,
     flexDirection: 'row',
-    gap: 9,
+    gap: 8,
   },
-
-  moodButton: {
+  mood: {
     flex: 1,
-    minHeight: 48,
-    paddingHorizontal: 9,
-    borderRadius: 16,
+    minHeight: 46,
+    borderRadius: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: SlickkColors.surfaceStrong,
+    borderWidth: 1,
+    borderColor: SlickkColors.border,
+  },
+  moodSelected: {
+    backgroundColor: SlickkColors.mint,
+    borderColor: SlickkColors.mint,
+  },
+  moodText: {
+    color: SlickkColors.textSoft,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '800',
+  },
+  moodTextSelected: {
+    color: SlickkColors.blackInk,
+  },
+  support: {
+    minHeight: 43,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
-    backgroundColor: '#101F32',
+    backgroundColor: '#241F18',
     borderWidth: 1,
-    borderColor: '#22364E',
+    borderColor: '#65542E',
   },
-
-  moodButtonSelected: {
-    backgroundColor: '#70F7D4',
-    borderColor: '#70F7D4',
-  },
-
-  moodText: {
-    color: '#D9E4EE',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
-  moodTextSelected: {
-    color: '#081426',
-  },
-
-  nextLessonCard: {
-    marginTop: 16,
-    padding: 20,
-    borderRadius: 27,
-    backgroundColor: '#0D2730',
-    borderWidth: 1,
-    borderColor: '#1F5A57',
-  },
-
-  nextLessonTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-
-  nextLabel: {
-    color: '#70F7D4',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-  },
-
-  nextSubject: {
-    marginTop: 6,
-    color: '#FFFFFF',
-    fontSize: 25,
-    lineHeight: 31,
+  supportText: {
+    color: '#FFE3A0',
+    fontSize: 11,
+    lineHeight: 15,
     fontWeight: '800',
   },
-
-  readyBadge: {
-    minHeight: 29,
-    paddingHorizontal: 10,
-    borderRadius: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor:
-      'rgba(112, 247, 212, 0.10)',
-  },
-
-  readyDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#70F7D4',
-  },
-
-  readyText: {
-    color: '#70F7D4',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-
-  nextDescription: {
-    marginTop: 12,
-    color: '#A0B4B7',
-    fontSize: 14,
-    lineHeight: 21,
-  },
-
-  lessonActions: {
-    marginTop: 18,
-    flexDirection: 'row',
-    gap: 10,
-  },
-
-  primaryLessonButton: {
-    flex: 1,
-    minHeight: 52,
-    paddingHorizontal: 16,
-    borderRadius: 17,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    backgroundColor: '#70F7D4',
-  },
-
-  primaryButtonText: {
-    flex: 1,
-    color: '#081426',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-
-  voiceLessonButton: {
-    width: 54,
-    height: 52,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#102C35',
-    borderWidth: 1,
-    borderColor: '#285C5C',
-  },
-
-  sectionHeading: {
-    marginTop: 27,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-
-  sectionTitle: {
-    marginTop: 4,
-    color: '#FFFFFF',
-    fontSize: 21,
-    lineHeight: 27,
-    fontWeight: '800',
-  },
-
-  sectionAction: {
-    color: '#70F7D4',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
-  routineCard: {
-    paddingHorizontal: 16,
-    paddingTop: 17,
-    paddingBottom: 5,
-    borderRadius: 23,
-    backgroundColor: '#0B1728',
-    borderWidth: 1,
-    borderColor: '#1D2F46',
-  },
-
-  routineProgressRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-
-  routineProgressText: {
-    color: '#AAB7C7',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  routinePercentage: {
-    color: '#70F7D4',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-
-  progressTrack: {
-    marginTop: 10,
-    marginBottom: 7,
-    height: 5,
-    borderRadius: 3,
+  tools: {
+    borderRadius: SlickkRadius.large,
     overflow: 'hidden',
-    backgroundColor: '#17273B',
+    backgroundColor: SlickkColors.surfaceSoft,
+    borderWidth: 1,
+    borderColor: SlickkColors.border,
   },
-
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-    backgroundColor: '#70F7D4',
-  },
-
-  routineItem: {
-    minHeight: 73,
+  toolRow: {
+    minHeight: 76,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#17283D',
+    gap: 11,
+    borderBottomWidth:
+      StyleSheet.hairlineWidth,
+    borderBottomColor: SlickkColors.border,
   },
-
-  routineCheck: {
-    width: 39,
-    height: 39,
+  toolRowLast: {
+    borderBottomWidth: 0,
+  },
+  toolIcon: {
+    width: 42,
+    height: 42,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#102137',
-    borderWidth: 1,
-    borderColor: '#27415E',
-  },
-
-  routineCheckDone: {
-    backgroundColor: '#70F7D4',
-    borderColor: '#70F7D4',
-  },
-
-  routineContent: {
-    flex: 1,
-    marginLeft: 12,
-    marginRight: 8,
-  },
-
-  routineTitle: {
-    color: '#EFF5F8',
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '700',
-  },
-
-  routineTitleDone: {
-    color: '#728398',
-    textDecorationLine: 'line-through',
-  },
-
-  routineSubtitle: {
-    marginTop: 2,
-    color: '#71849B',
-    fontSize: 12,
-    lineHeight: 17,
-  },
-
-  actionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 12,
-  },
-
-  actionCard: {
-    width: '48.4%',
-    minHeight: 145,
-    padding: 15,
-    borderRadius: 21,
-    backgroundColor: '#0C192A',
-    borderWidth: 1,
-    borderColor: '#1D3048',
-  },
-
-  actionIcon: {
-    width: 43,
-    height: 43,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor:
       'rgba(112, 247, 212, 0.09)',
   },
-
-  actionTitle: {
-    marginTop: 15,
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-
-  actionSubtitle: {
-    marginTop: 5,
-    color: '#71849B',
-    fontSize: 12,
-    lineHeight: 17,
-  },
-
-  progressCard: {
-    marginTop: 22,
-    padding: 17,
-    borderRadius: 23,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0D1C2D',
-    borderWidth: 1,
-    borderColor: '#24415A',
-  },
-
-  progressCardIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#70F7D4',
-  },
-
-  progressCardContent: {
+  toolCopy: {
     flex: 1,
-    marginHorizontal: 13,
   },
-
-  progressCardTitle: {
-    marginTop: 4,
-    color: '#FFFFFF',
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '800',
+  toolLabel: {
+    color: SlickkColors.text,
+    ...SlickkTypography.label,
   },
-
-  progressCardText: {
-    marginTop: 6,
-    color: '#7F91A7',
-    fontSize: 12,
-    lineHeight: 18,
+  toolDetail: {
+    marginTop: 3,
+    color: SlickkColors.textMuted,
+    fontSize: 10,
+    lineHeight: 15,
+    fontWeight: '500',
   },
-
-  parentCard: {
-    marginTop: 14,
-    padding: 16,
-    borderRadius: 21,
+  privacyNote: {
+    marginTop: 18,
+    paddingHorizontal: 4,
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0B1728',
-    borderWidth: 1,
-    borderColor: '#1D3048',
-  },
-
-  parentIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor:
-      'rgba(112, 247, 212, 0.09)',
-  },
-
-  parentContent: {
-    flex: 1,
-    marginHorizontal: 12,
-  },
-
-  parentTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-
-  parentDescription: {
-    marginTop: 4,
-    color: '#71849B',
-    fontSize: 12,
-    lineHeight: 18,
-  },
-
-  soonBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor:
-      'rgba(112, 247, 212, 0.09)',
-  },
-
-  soonText: {
-    color: '#70F7D4',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-
-  privacyRow: {
-    marginTop: 22,
-    paddingHorizontal: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 9,
   },
-
-  privacyText: {
+  privacyNoteText: {
     flex: 1,
-    color: '#61748B',
-    fontSize: 11,
-    lineHeight: 17,
-  },
-
-  bottomNavigation: {
-    minHeight: 76,
-    paddingHorizontal: 9,
-    paddingTop: 8,
-    paddingBottom:
-      Platform.OS === 'android' ? 9 : 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: '#091525',
-    borderTopWidth: 1,
-    borderTopColor: '#1A2B40',
-  },
-
-  navItem: {
-    minWidth: 57,
-    height: 55,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-
-  navItemActive: {
-    minWidth: 61,
-    height: 55,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    backgroundColor: '#70F7D4',
-  },
-
-  navText: {
-    color: '#71849B',
+    color: SlickkColors.textMuted,
     fontSize: 10,
-    fontWeight: '700',
-  },
-
-  navTextActive: {
-    color: '#081426',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-
-  accessCard: {
-    minHeight: 66,
-    marginTop: 12,
-    paddingHorizontal: 14,
-    borderRadius: 19,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#0C192A',
-    borderWidth: 1,
-    borderColor: '#1C3048',
-  },
-
-  accessCardIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#102237',
-  },
-
-  accessCardCopy: {
-    flex: 1,
-  },
-
-  accessCardTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  accessCardText: {
-    marginTop: 3,
-    color: '#7F91A7',
-    fontSize: 11,
     lineHeight: 16,
+    fontWeight: '500',
   },
-
+  pressed: {
+    opacity: 0.68,
+  },
+  buttonPressed: {
+    transform: [{ scale: 0.985 }],
+  },
+  cardPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.985 }],
+  },
 });

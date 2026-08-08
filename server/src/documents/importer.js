@@ -46,6 +46,7 @@ async function importPdfBuffer({
   replace = false,
   noOcr = false,
   ocrLanguage,
+  maximumBytes,
   store,
   createStore = createCurriculumStore,
   extractPages = extractPdfPages,
@@ -53,7 +54,7 @@ async function importPdfBuffer({
   onProgress = () => {},
 }) {
   validateImportMetadata(metadata);
-  validatePdfBuffer(buffer);
+  validatePdfBuffer(buffer, maximumBytes);
   const inputHash = hashPdf(buffer);
   const ownedStore = store || createStore();
 
@@ -92,7 +93,12 @@ async function importPdfBuffer({
     onProgress({
       phase: 'extracting',
     });
-    const extracted = await extractPages(buffer);
+    const extracted = await extractPages(
+      buffer,
+      {
+        maximumBytes,
+      }
+    );
     let pages = extracted.pages;
     const pagesNeedingOcr = pages
       .filter(
@@ -119,7 +125,8 @@ async function importPdfBuffer({
       const ocrResult = await recognizePages(
         buffer,
         {
-          pageNumbers: pagesNeedingOcr,
+
+          maximumBytes,          pageNumbers: pagesNeedingOcr,
           languages,
           onProgress(progress) {
             onProgress({

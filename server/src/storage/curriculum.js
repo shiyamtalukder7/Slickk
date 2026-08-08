@@ -233,6 +233,30 @@ function gradeBandPlacement(grade) {
   return 'Class 11-12';
 }
 
+function gradePlacementAliases(grade) {
+  const exact = limitedText(grade, '', 80);
+  const match = exact.match(
+    /\b(\d{1,2})\b/
+  );
+  const number = match ? Number(match[1]) : null;
+
+  if (!number || number < 1 || number > 12) {
+    return {
+      exact,
+      className: '',
+      gradeName: '',
+      band: '',
+    };
+  }
+
+  return {
+    exact,
+    className: `Class ${number}`,
+    gradeName: `Grade ${number}`,
+    band: gradeBandPlacement(exact),
+  };
+}
+
 function mapDocument(row) {
   if (!row) {
     return null;
@@ -628,6 +652,8 @@ function createCurriculumStore(
         AND (
           ? = '' OR
           d.grade = ? OR
+          d.grade = ? OR
+          d.grade = ? OR
           d.grade = ?
         )
         AND (? = '' OR d.subject = ?)
@@ -1019,12 +1045,10 @@ function createCurriculumStore(
       '',
       80
     );
-    const grade = limitedText(
-      filters.grade,
-      '',
-      80
-    );
-    const gradeBand = gradeBandPlacement(grade);
+    const gradePlacement =
+      gradePlacementAliases(filters.grade);
+    const grade = gradePlacement.exact;
+    const gradeBand = gradePlacement.band;
     const subject = limitedText(
       filters.subject,
       '',
@@ -1055,6 +1079,8 @@ function createCurriculumStore(
         version,
         grade,
         grade,
+        gradePlacement.className,
+        gradePlacement.gradeName,
         gradeBand,
         subject,
         subject,
@@ -1197,4 +1223,5 @@ module.exports = {
   createCurriculumStore,
   entitlementRows,
   gradeBandPlacement,
+  gradePlacementAliases,
 };

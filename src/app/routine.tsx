@@ -24,6 +24,13 @@ import {
   loadStudentProfile,
   type StudentEducationProfile,
 } from '@/services/student-profile';
+import {
+  cancelRoutineReminders,
+  loadRoutineState,
+  saveRoutineState,
+  scheduleRoutineReminders,
+  type RoutineState,
+} from '@/services/routine';
 
 type IoniconName =
   ComponentProps<typeof Ionicons>['name'];
@@ -76,14 +83,21 @@ export default function RoutineScreen() {
   const [completed, setCompleted] =
     useState<Record<string, boolean>>({});
 
+  const [routineState, setRoutineState] =
+    useState<RoutineState | null>(null);
+
+  const [isSaving, setIsSaving] = useState(false);
+
   useEffect(() => {
     let isMounted = true;
 
-    loadStudentProfile()
-      .then((profile) => {
-        if (isMounted) {
-          setStudentProfile(profile);
-        }
+    Promise.all([loadStudentProfile(), loadRoutineState()])
+      .then(([profile, savedRoutine]) => {
+        if (!isMounted) return;
+        setStudentProfile(profile);
+        setRoutineState(savedRoutine);
+        setCompleted(savedRoutine.completed);
+        setRemindersEnabled(savedRoutine.remindersEnabled);
       })
       .catch((error) => {
         console.error(
@@ -141,26 +155,54 @@ export default function RoutineScreen() {
       : 0;
 
   const toggleActivity = (activityId: string) => {
-    setCompleted((current) => ({
-      ...current,
-      [activityId]: !current[activityId],
-    }));
+    setCompleted((current) => {
+      const next = {
+        ...current,
+        [activityId]: !current[activityId],
+      };
+      if (routineState) {
+        const nextState = { ...routineState, completed: next };
+        setRoutineState(nextState);
+        void saveRoutineState(nextState);
+      }
+      return next;
+    });
   };
 
-  const saveRoutine = () => {
-    Alert.alert(
-      'Routine saved',
-      remindersEnabled
-        ? 'Your daily routine is saved. Slickk will prepare five-minute alerts when notification support is connected.'
-        : 'Your daily routine is saved without reminder alerts.'
-    );
-  };
+  const saveRoutine = async () => {
+    if (!routineState || isSaving) return;
+    setIsSaving(true);
 
-  const addActivity = () => {
-    Alert.alert(
-      'Add activity',
-      'The full routine editor will allow subjects, start times, durations and repeat days to be customized.'
-    );
+    try {
+      const notificationIds = remindersEnabled
+        ? await scheduleRoutineReminders(
+            routineActivities,
+            routineState.notificationIds
+          )
+        : (await cancelRoutineReminders(routineState.notificationIds), []);
+
+      const nextState = {
+        ...routineState,
+        completed,
+        remindersEnabled,
+        notificationIds,
+      };
+      await saveRoutineState(nextState);
+      setRoutineState(nextState);
+      Alert.alert(
+        'Routine saved',
+        remindersEnabled
+          ? 'Daily five-minute reminders are active for all three learning activities.'
+          : 'Your routine is saved without reminder alerts.'
+      );
+    } catch (error) {
+      Alert.alert(
+        'Unable to schedule reminders',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -198,21 +240,13 @@ export default function RoutineScreen() {
             </Text>
           </View>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Add routine activity"
-            onPress={addActivity}
-            style={({ pressed }) => [
-              styles.addButton,
-              pressed && styles.pressed,
-            ]}
-          >
+          <View style={styles.addButton}>
             <Ionicons
-              name="add"
+              name="notifications-outline"
               size={23}
               color="#081426"
             />
-          </Pressable>
+          </View>
         </View>
 
         <ScrollView
@@ -309,7 +343,7 @@ export default function RoutineScreen() {
               </Text>
 
               <Text style={styles.sectionTitle}>
-                Today's activities
+                Today’s activities
               </Text>
             </View>
 
@@ -487,7 +521,7 @@ export default function RoutineScreen() {
             />
 
             <Text style={styles.saveButtonText}>
-              Save routine
+              {isSaving ? 'Saving…' : 'Save routine'}
             </Text>
           </Pressable>
         </View>

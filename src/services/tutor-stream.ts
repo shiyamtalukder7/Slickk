@@ -38,6 +38,23 @@ export type TutorStreamRequest = {
   channel: 'typed' | 'live';
   mode: TutorMode;
   recentMessages: TutorHistoryMessage[];
+  difficulty?: 'easy' | 'medium' | 'hard';
+  performance?: number;
+};
+
+export type TutorTeachingDecision = {
+  method: string;
+  reason: string;
+  difficulty: string;
+  grounded: boolean;
+  roadmap?: {
+    title: string;
+    currentIndex: number;
+    phases: { key: string; label: string; status: 'complete' | 'current' | 'upcoming' }[];
+    successCriterion: string;
+    sessionMinutes: number;
+    pace: string;
+  };
 };
 
 type StartEvent = {
@@ -59,6 +76,7 @@ export type CompleteEvent = {
     requestId: string;
     generatedAt: string;
     grounded: boolean;
+    teachingDecision: TutorTeachingDecision;
     performance?: {
       totalMs: number | null;
       loadMs: number | null;
@@ -97,6 +115,115 @@ function isRecord(
     value !== null &&
     !Array.isArray(value)
   );
+}
+
+const TUTOR_REPLY_KEYS = [
+  'reply',
+  'message',
+  'content',
+  'answer',
+  'text',
+] as const;
+
+function stripTutorReplyFence(
+  value: string
+) {
+  const trimmed = value.trim();
+
+  const fenced = trimmed.match(
+    /^```(?:json)?\s*([\s\S]*?)\s*```$/i
+  );
+
+  return fenced?.[1]?.trim() ?? trimmed;
+}
+
+export function normalizeTutorReply(
+  value: unknown
+): string {
+  let current: unknown = value;
+
+  for (
+    let depth = 0;
+    depth < 5;
+    depth += 1
+  ) {
+    if (typeof current === 'string') {
+      const text =
+        stripTutorReplyFence(current);
+
+      if (!text) {
+        return '';
+      }
+
+      const looksStructured =
+        (
+          text.startsWith('{') &&
+          text.endsWith('}')
+        ) ||
+        (
+          text.startsWith('[') &&
+          text.endsWith(']')
+        ) ||
+        (
+          text.startsWith('"') &&
+          text.endsWith('"')
+        );
+
+      if (!looksStructured) {
+        return text;
+      }
+
+      try {
+        const parsed: unknown =
+          JSON.parse(text);
+
+        if (typeof parsed === 'string') {
+          current = parsed;
+          continue;
+        }
+
+        if (isRecord(parsed)) {
+          const hasReplyField =
+            TUTOR_REPLY_KEYS.some(
+              (key) => key in parsed
+            );
+
+          if (hasReplyField) {
+            current = parsed;
+            continue;
+          }
+        }
+
+        // Preserve legitimate JSON examples that
+        // are not model-response wrappers.
+        return text;
+      } catch {
+        return text;
+      }
+    }
+
+    if (isRecord(current)) {
+      const currentRecord = current;
+
+      const nextKey =
+        TUTOR_REPLY_KEYS.find(
+          (key) => key in currentRecord
+        );
+
+      if (!nextKey) {
+        return '';
+      }
+
+      current = currentRecord[nextKey];
+      continue;
+    }
+
+    return '';
+  }
+
+  return typeof current === 'string'
+    ? stripTutorReplyFence(current)
+    : '';
 }
 
 async function readHttpError(
@@ -286,6 +413,12 @@ export async function streamTutorResponse(
   signal: AbortSignal,
   callbacks: StreamCallbacks
 ): Promise<CompleteEvent> {
+  /*
+   * Mind Right runtime enforcement lives in the authoritative
+   * Slickk tutor gateway. Use this route exclusively so exact-answer
+   * evaluation, conversation persistence, and Learning Twin evidence
+   * cannot be bypassed by the legacy compatibility brain.
+   */
   const authorizationHeaders =
     await getSlickkAuthorizationHeaders();
 
@@ -296,101 +429,42 @@ export async function streamTutorResponse(
     const currentMessage =
       request.message.trim();
 
-    const completedHistory: Array<{
-      role: 'user' | 'assistant';
-      content: string;
-    }> = [];
-
-    let pendingUser: {
-      role: 'user';
-      content: string;
-    } | null = null;
-
     const sourceHistory =
       includeRecentMessages
         ? request.recentMessages
         : [];
 
-    sourceHistory.forEach((message) => {
-      const content = message.text.trim();
-
-      if (
-        !content ||
-        content ===
-          'Preparing a verified answer...' ||
-        content === 'Response stopped.' ||
-        content.startsWith(
-          'Slickk could not finish'
-        )
-      ) {
-        return;
-      }
-
-      if (message.role === 'student') {
-        pendingUser = {
-          role: 'user',
-          content,
-        };
-
-        return;
-      }
-
-      if (pendingUser) {
-        completedHistory.push(
-          pendingUser,
-          {
-            role: 'assistant',
-            content,
-          }
-        );
-
-        pendingUser = null;
-      }
-    });
+    const recentMessages = sourceHistory
+      .map((message) => ({
+        role: message.role,
+        text: message.text.trim(),
+      }))
+      .filter(
+        (message) =>
+          message.text &&
+          message.text !==
+            'Preparing a verified answer...' &&
+          message.text !== 'Response stopped.' &&
+          !message.text.startsWith(
+            'Slickk could not finish'
+          )
+      );
 
     return {
-      model: 'slickk-edu-local',
-
-      student: {
-        name: request.studentName,
-        id: request.studentId,
-        grade: request.grade,
-        curriculum: request.curriculum,
-        ...(
-          request.school
-            ? {
-                school: request.school,
-              }
-            : {}
-        ),
-      },
-
+      message: currentMessage,
+      studentName: request.studentName,
+      studentId: request.studentId,
+      grade: request.grade,
       language: request.language,
       subject: request.subject,
-
-      topic:
-        request.topic?.trim() ||
-        currentMessage,
-
-      teaching_method: request.mode,
       channel: request.channel,
-
-      stream: false,
-      max_tokens: 180,
-
-      messages: [
-        ...completedHistory,
-        {
-          role: 'user',
-          content: currentMessage,
-        },
-      ],
-
+      mode: request.mode,
+      recentMessages,
       ...(
         includeConversationId &&
         request.conversationId
           ? {
-              conversation_id:
+              conversationId:
                 request.conversationId,
             }
           : {}
@@ -403,7 +477,7 @@ export async function streamTutorResponse(
     includeRecentMessages: boolean
   ) =>
     expoFetch(
-      getSlickkApiUrl('/v1/tutor/chat'),
+      getSlickkApiUrl('/api/tutor'),
       {
         method: 'POST',
         headers: {
@@ -422,7 +496,15 @@ export async function streamTutorResponse(
     );
 
   let response =
-    await sendTutorRequest(false, true);
+    await sendTutorRequest(true, true);
+
+  if (
+    response.status === 400 &&
+    request.conversationId
+  ) {
+    response =
+      await sendTutorRequest(false, true);
+  }
 
   if (
     response.status === 400 &&
@@ -475,10 +557,15 @@ export async function streamTutorResponse(
     return '';
   };
 
-  const reply = firstText(
-    data.reply,
-    messageRecord.content,
-    data.content
+  const reply = normalizeTutorReply(
+    firstText(
+      data.reply,
+      messageRecord.content,
+      data.content,
+      data.answer,
+      data.text,
+      data.message
+    )
   );
 
   if (!reply) {
@@ -492,7 +579,46 @@ export async function streamTutorResponse(
     responseMetadata.grounded === true ||
     responseMetadata.grounding ===
       'curriculum' ||
-    tutorMetadata.grounded === true;
+      tutorMetadata.grounded === true;
+
+  const policyDecision = isRecord(responseMetadata.tutorDecision)
+    ? responseMetadata.tutorDecision
+    : {};
+  const policyAction = isRecord(policyDecision.action) ? policyDecision.action : {};
+  const roadmapRecord = isRecord(policyDecision.lessonRoadmap) ? policyDecision.lessonRoadmap : {};
+  const roadmapPhases = Array.isArray(roadmapRecord.phases)
+    ? roadmapRecord.phases.filter(isRecord).map((phase) => ({
+        key: firstText(phase.key), label: firstText(phase.label),
+        status: (['complete', 'current', 'upcoming'].includes(firstText(phase.status))
+          ? firstText(phase.status) : 'upcoming') as 'complete' | 'current' | 'upcoming',
+      })).filter((phase) => phase.key && phase.label)
+    : [];
+
+  const teachingDecision: TutorTeachingDecision = {
+    method:
+      firstText(
+        policyAction.kind,
+        tutorMetadata.teaching_method,
+        request.mode
+      ) || 'adaptive',
+    reason:
+      firstText(policyAction.instruction, tutorMetadata.teaching_reason) ||
+      'Slickk selected this step from the learner profile and current question.',
+    difficulty:
+      firstText(
+        tutorMetadata.difficulty,
+        request.difficulty
+      ) || 'medium',
+    grounded,
+    roadmap: roadmapPhases.length ? {
+      title: firstText(roadmapRecord.title) || 'Personal lesson',
+      currentIndex: typeof roadmapRecord.currentIndex === 'number' ? roadmapRecord.currentIndex : 0,
+      phases: roadmapPhases,
+      successCriterion: firstText(roadmapRecord.successCriterion) || 'Show independent understanding.',
+      sessionMinutes: typeof roadmapRecord.sessionMinutes === 'number' ? roadmapRecord.sessionMinutes : 20,
+      pace: firstText(roadmapRecord.pace) || 'standard',
+    } : undefined,
+  };
 
   const learningTwinSource =
     isRecord(data.learningTwin)
@@ -601,6 +727,7 @@ export async function streamTutorResponse(
       requestId,
       generatedAt,
       grounded,
+      teachingDecision,
       performance:
         parsePerformance(
           responseMetadata.performance

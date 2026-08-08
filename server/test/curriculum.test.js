@@ -418,3 +418,69 @@ test('OCR evidence regions persist with student-scoped corrections', () => {
     store.close();
   }
 });
+
+
+test('Class and Grade labels resolve to the same numeric curriculum placement', () => {
+  const store = createCurriculumStore(':memory:');
+
+  try {
+    store.importDocument({
+      sha256: 'pearson-class-grade-alias-test',
+      metadata: {
+        title:
+          'Pearson Chemistry Grade Eight',
+        curriculum: 'Pearson Edexcel',
+        academicYear: '2026-2027',
+        grade: 'Grade 8',
+        subject: 'Chemistry',
+        language: 'English',
+        version:
+          'International GCSE (9-1) 4CH1',
+        sourceUrl: '',
+        rights: 'licensed-user-copy',
+        access: {
+          studentId: 'local-student',
+        },
+      },
+      pages: [
+        {
+          pageNumber: 112,
+          text:
+            'Ionic compounds conduct electricity when molten because the ions are free to move.',
+        },
+      ],
+    });
+
+    const matching = store.search(
+      'ionic compounds conduct electricity molten',
+      5,
+      {
+        curriculum: 'Pearson Edexcel',
+        grade: 'Class 8',
+        subject: 'Chemistry',
+        studentId: 'local-student',
+      }
+    );
+
+    const wrongPlacement = store.search(
+      'ionic compounds conduct electricity molten',
+      5,
+      {
+        curriculum: 'Pearson Edexcel',
+        grade: 'Class 7',
+        subject: 'Chemistry',
+        studentId: 'local-student',
+      }
+    );
+
+    assert.equal(matching.length, 1);
+    assert.equal(
+      matching[0].documentTitle,
+      'Pearson Chemistry Grade Eight'
+    );
+    assert.equal(matching[0].page, 112);
+    assert.equal(wrongPlacement.length, 0);
+  } finally {
+    store.close();
+  }
+});

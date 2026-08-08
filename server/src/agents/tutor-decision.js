@@ -123,6 +123,34 @@ function selectAction(plan, learnerState) {
   return ACTIONS.teach;
 }
 
+function lessonRoadmap(actionKind, topic, sessionAdaptation = null) {
+  const phases = [
+    { key: 'diagnose', label: 'Find your starting point' },
+    { key: 'learn', label: 'Build the idea' },
+    { key: 'practice', label: 'Practise with guidance' },
+    { key: 'teach-back', label: 'Explain it yourself' },
+    { key: 'transfer', label: 'Use it in a new problem' },
+  ];
+  const phaseByAction = {
+    'diagnose-prior-knowledge': 0,
+    'grounded-explanation': 1,
+    'scaffold-misconception': 1,
+    'guided-remediation': 2,
+    'evaluate-answer': 2,
+    'verify-teach-back': 3,
+    'independent-transfer': 4,
+  };
+  const currentIndex = phaseByAction[actionKind] ?? 0;
+  return {
+    title: `Master ${topic}`,
+    currentIndex,
+    phases: phases.map((phase, index) => ({ ...phase, status: index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'upcoming' })),
+    successCriterion: 'Explain the idea in your own words and solve a different example without a hint.',
+    sessionMinutes: Number(sessionAdaptation?.sessionMinutes) || 20,
+    pace: sessionAdaptation?.pace || 'standard',
+  };
+}
+
 function createTutorDecision({
   pedagogyPlan,
   curriculumEvidence = [],
@@ -151,6 +179,7 @@ function createTutorDecision({
       ...action,
       supportLevel: pedagogyPlan.supportLevel,
     },
+    lessonRoadmap: lessonRoadmap(action.kind, topic, pedagogyPlan.sessionAdaptation),
     questionStrategy,
     grounding: {
       status: grounded
@@ -196,5 +225,6 @@ module.exports = {
   POLICY_VERSION,
   createTutorDecision,
   learnerStateFrom,
+  lessonRoadmap,
   selectAction,
 };

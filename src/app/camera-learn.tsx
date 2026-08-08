@@ -6,8 +6,10 @@ import type {
 import { Image } from 'expo-image';
 import {
   router,
+  type Href,
   useLocalSearchParams,
 } from 'expo-router';
+import { attachAssessmentOcr } from '@/services/weekly-assessment';
 import {
   useEffect,
   useRef,
@@ -118,8 +120,9 @@ function CameraLearnScreenWithCamera({
   camera: ExpoCameraModule;
 }) {
   const { CameraView, useCameraPermissions } = camera;
-  const { mode: requestedMode } = useLocalSearchParams<{
+  const { mode: requestedMode, purpose } = useLocalSearchParams<{
     mode?: string;
+    purpose?: string;
   }>();
   const [mode, setMode] = useState<CaptureMode>(
     requestedMode === 'camera' ? 'camera' : 'library'
@@ -264,9 +267,15 @@ function CameraLearnScreenWithCamera({
     setIsBusy(true);
 
     try {
-      setAnalysisResults(
-        await analyzeLearningMaterials(materials)
-      );
+      const results = await analyzeLearningMaterials(materials);
+      setAnalysisResults(results);
+      if (purpose === 'test-answers') {
+        await attachAssessmentOcr(
+          results.map((result) => result.previewText || '').filter(Boolean).join('\n\n'),
+          results.map((result) => result.documentId).filter(Boolean)
+        );
+        router.push('/assessment-review' as Href);
+      }
     } catch (analysisError) {
       setError(errorMessage(analysisError));
     } finally {
@@ -448,9 +457,9 @@ function CameraLearnScreenWithCamera({
           />
         </Pressable>
         <View style={styles.headerCopy}>
-          <Text style={styles.eyebrow}>PHASE 17</Text>
+          <Text style={styles.eyebrow}>VISUAL LEARNING</Text>
           <Text style={styles.title}>
-            Learning materials
+            Homework & materials
           </Text>
         </View>
       </View>
@@ -577,8 +586,7 @@ function CameraLearnScreenWithCamera({
             Nothing prepared yet
           </Text>
           <Text style={styles.emptyText}>
-            Add a clear page or document. OCR and visual
-            understanding will connect in the next phase.
+            Add a clear page or document. Slickk will extract available text and prepare it for a grounded lesson.
           </Text>
         </View>
       ) : (
@@ -740,11 +748,10 @@ function CameraLearnScreenWithCamera({
         </View>
         <View style={styles.nextPhaseCopy}>
           <Text style={styles.nextPhaseLabel}>
-            NEXT: OCR + VISION
+            PRIVATE MATERIAL ANALYSIS
           </Text>
           <Text style={styles.nextPhaseText}>
-            Extract text, equations, handwriting, and
-            diagrams before starting a grounded lesson.
+            Review extracted text and detected learning content before starting a grounded lesson.
           </Text>
         </View>
       </View>

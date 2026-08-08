@@ -203,7 +203,42 @@ async function checkOllamaHealth() {
   };
 }
 
-function tutorRequestBody(messages, stream, format) {
+const GENERATION_OPTION_KEYS = Object.freeze([
+  'temperature',
+  'top_p',
+  'top_k',
+  'min_p',
+  'repeat_penalty',
+  'seed',
+]);
+
+function normalizeGenerationOptions(value) {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value)
+  ) {
+    return {};
+  }
+
+  const normalized = {};
+
+  for (const key of GENERATION_OPTION_KEYS) {
+    if (
+      Object.prototype.hasOwnProperty.call(
+        value,
+        key
+      ) &&
+      Number.isFinite(value[key])
+    ) {
+      normalized[key] = value[key];
+    }
+  }
+
+  return normalized;
+}
+
+function tutorRequestBody(messages, stream, format, generationOptions = null) {
   return {
     model: config.modelName,
     stream,
@@ -217,6 +252,9 @@ function tutorRequestBody(messages, stream, format) {
       repeat_penalty: 1.08,
       num_ctx: config.numContext,
       num_predict: config.numPredict,
+      ...normalizeGenerationOptions(
+        generationOptions
+      ),
     },
   };
 }
@@ -225,6 +263,7 @@ async function generateTutorResult({
   messages,
   format,
   signal,
+  generationOptions,
 }) {
   const data = await fetchJson('/api/chat', {
     method: 'POST',
@@ -233,7 +272,7 @@ async function generateTutorResult({
     },
     signal,
     body: JSON.stringify(
-      tutorRequestBody(messages, false, format)
+      tutorRequestBody(messages, false, format, generationOptions)
     ),
   });
 

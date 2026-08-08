@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   streamTutorResponse,
   TutorStreamError,
+  type TutorTeachingDecision,
 } from '@/services/tutor-stream';
 import {
   loadStudentProfile,
@@ -160,8 +161,8 @@ const buildCompletedTutorHistory = (
 export default function SlickkTutorScreen() {
   const insets = useSafeAreaInsets();
 
-  const { subject: requestedSubject } =
-    useLocalSearchParams<{ subject?: string }>();
+  const { subject: requestedSubject, prompt: requestedPrompt } =
+    useLocalSearchParams<{ subject?: string; prompt?: string }>();
 
   const selectedSubject =
     typeof requestedSubject === 'string' &&
@@ -175,7 +176,9 @@ export default function SlickkTutorScreen() {
   const [messages, setMessages] =
     useState<Message[]>(STARTER_MESSAGES);
 
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(
+    typeof requestedPrompt === 'string' ? requestedPrompt : ''
+  );
   const [isThinking, setIsThinking] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isSpeechEnabled, setIsSpeechEnabled] =
@@ -186,6 +189,13 @@ export default function SlickkTutorScreen() {
 
   const [learningTwin, setLearningTwin] =
     useState<LearningTwin | null>(null);
+
+  const [teachingDecision, setTeachingDecision] =
+    useState<TutorTeachingDecision | null>(null);
+
+  const [lessonFit, setLessonFit] = useState<
+    'easier' | 'right' | 'harder' | null
+  >(null);
 
   const [conversationId, setConversationId] =
     useState<string | undefined>();
@@ -435,6 +445,20 @@ export default function SlickkTutorScreen() {
           mode: selectedMode,
           recentMessages:
             buildCompletedTutorHistory(messages),
+          difficulty:
+            lessonFit === 'easier'
+              ? 'easy'
+              : lessonFit === 'harder'
+                ? 'hard'
+                : undefined,
+          performance:
+            lessonFit === 'easier'
+              ? 0.25
+              : lessonFit === 'harder'
+                ? 0.9
+                : lessonFit === 'right'
+                  ? 0.65
+                  : undefined,
         },
         controller.signal,
         {
@@ -459,6 +483,10 @@ export default function SlickkTutorScreen() {
       const reply = completed.reply.trim();
 
       updateTutorMessage(tutorMessageId, reply);
+      setTeachingDecision(
+        completed.metadata.teachingDecision
+      );
+      setLessonFit(null);
 
       if (
         completed.metadata.grounded &&
@@ -928,6 +956,80 @@ export default function SlickkTutorScreen() {
           }
           ListFooterComponent={
             <>
+              {teachingDecision ? (
+                <View style={styles.adaptiveCard}>
+                  <View style={styles.adaptiveHeader}>
+                    <Ionicons name="git-branch-outline" size={18} color="#70F7D4" />
+                    <View style={styles.adaptiveHeaderCopy}>
+                      <Text style={styles.twinLabel}>WHY SLICKK TAUGHT THIS WAY</Text>
+                      <Text style={styles.adaptiveMethod}>
+                        {teachingDecision.method.replaceAll('-', ' ')} • {teachingDecision.difficulty}
+                      </Text>
+                    </View>
+                    <View style={[styles.groundingBadge, !teachingDecision.grounded && styles.modelBadge]}>
+                      <Text style={styles.groundingText}>
+                        {teachingDecision.grounded ? 'SOURCE CHECKED' : 'MODEL ONLY'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.adaptiveReason}>{teachingDecision.reason}</Text>
+                  {teachingDecision.roadmap ? (
+                    <View style={styles.roadmapCard}>
+                      <View style={styles.roadmapHeading}>
+                        <Text style={styles.roadmapTitle}>{teachingDecision.roadmap.title}</Text>
+                        <Text style={styles.paceBadge}>{teachingDecision.roadmap.sessionMinutes} MIN • {teachingDecision.roadmap.pace.toUpperCase()}</Text>
+                      </View>
+                      <View style={styles.roadmapSteps}>
+                        {teachingDecision.roadmap.phases.map((phase) => (
+                          <View key={phase.key} style={styles.roadmapStep}>
+                            <Ionicons
+                              name={phase.status === 'complete' ? 'checkmark-circle' : phase.status === 'current' ? 'radio-button-on' : 'ellipse-outline'}
+                              size={16}
+                              color={phase.status === 'upcoming' ? '#52657D' : '#70F7D4'}
+                            />
+                            <Text style={[styles.roadmapStepText, phase.status === 'current' && styles.roadmapStepCurrent]}>{phase.label}</Text>
+                          </View>
+                        ))}
+                      </View>
+                      <Text style={styles.successCriterion}>SUCCESS: {teachingDecision.roadmap.successCriterion}</Text>
+                    </View>
+                  ) : null}
+                  <Text style={styles.fitQuestion}>How did that lesson feel?</Text>
+
+                  <View style={styles.fitActions}>
+                    {([
+                      ['easier', 'Too hard'],
+                      ['right', 'Just right'],
+                      ['harder', 'Too easy'],
+                    ] as const).map(([value, label]) => (
+                      <Pressable
+                        key={value}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: lessonFit === value }}
+                        onPress={() => setLessonFit(value)}
+                        style={({ pressed }) => [
+                          styles.fitButton,
+                          lessonFit === value && styles.fitButtonSelected,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={[
+                          styles.fitButtonText,
+                          lessonFit === value && styles.fitButtonTextSelected,
+                        ]}>{label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  {lessonFit ? (
+                    <Text style={styles.adaptationNotice}>
+                      Next response will be {lessonFit === 'easier' ? 'slower with more scaffolding' : lessonFit === 'harder' ? 'more challenging and independent' : 'kept at this level'}.
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
               {learningTwin ? (
                 <View style={styles.twinStrip}>
                   <View style={styles.twinStripIcon}>
@@ -1406,6 +1508,121 @@ const styles = StyleSheet.create({
   studentMessageText: {
     color: '#081426',
     fontWeight: '700',
+  },
+
+  adaptiveCard: {
+    marginTop: 4,
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: '#101D30',
+    borderWidth: 1,
+    borderColor: '#29405D',
+  },
+
+  adaptiveHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+
+  adaptiveHeaderCopy: {
+    flex: 1,
+  },
+
+  adaptiveMethod: {
+    marginTop: 3,
+    color: '#F5F8FC',
+    fontSize: 13,
+    fontWeight: '800',
+    textTransform: 'capitalize',
+  },
+
+  groundingBadge: {
+    borderRadius: 9,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    backgroundColor: '#17473D',
+  },
+
+  modelBadge: {
+    backgroundColor: '#47351A',
+  },
+
+  groundingText: {
+    color: '#D5FFF3',
+    fontSize: 7,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+
+  adaptiveReason: {
+    marginTop: 10,
+    color: '#9BACBF',
+    fontSize: 11,
+    lineHeight: 17,
+  },
+
+  roadmapCard: {
+    marginTop: 12, padding: 12, borderRadius: 14,
+    backgroundColor: '#091828', borderWidth: 1, borderColor: '#203A4D',
+  },
+  roadmapTitle: { color: '#F5F8FC', fontSize: 13, fontWeight: '900' },
+  roadmapHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  paceBadge: { color: '#70F7D4', fontSize: 8, fontWeight: '900', letterSpacing: 0.4 },
+  roadmapSteps: { marginTop: 9, gap: 7 },
+  roadmapStep: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  roadmapStepText: { color: '#6E8197', fontSize: 10, fontWeight: '700' },
+  roadmapStepCurrent: { color: '#D5FFF3' },
+  successCriterion: {
+    marginTop: 10, color: '#70F7D4', fontSize: 9, lineHeight: 14,
+    fontWeight: '800', letterSpacing: 0.3,
+  },
+
+  fitQuestion: {
+    marginTop: 12,
+    color: '#DCE5F0',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  fitActions: {
+    marginTop: 8,
+    flexDirection: 'row',
+    gap: 7,
+  },
+
+  fitButton: {
+    flex: 1,
+    minHeight: 35,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#344A64',
+    backgroundColor: '#0A1525',
+  },
+
+  fitButtonSelected: {
+    borderColor: '#70F7D4',
+    backgroundColor: '#173B38',
+  },
+
+  fitButtonText: {
+    color: '#9CACBF',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+
+  fitButtonTextSelected: {
+    color: '#CFFFF2',
+  },
+
+  adaptationNotice: {
+    marginTop: 9,
+    color: '#70F7D4',
+    fontSize: 10,
+    lineHeight: 15,
   },
 
   twinStrip: {

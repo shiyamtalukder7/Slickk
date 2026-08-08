@@ -1,6 +1,8 @@
 import { File, Paths } from 'expo-file-system';
-
+import { fetch as expoFetch } from 'expo/fetch';
+import { getSlickkApiUrl } from '@/config/api';
 import {
+  getSlickkAuthorizationHeaders,
   resolveSlickkStudentId,
 } from '@/services/api-auth';
 
@@ -59,8 +61,8 @@ const defaultState = (): LearningTwinState => ({
   misconception: '',
   nextAction:
     'Complete a learning check to update your Learning Twin.',
-  mastery: 24,
-  confidence: 38,
+  mastery: 0,
+  confidence: 0,
   attempts: 0,
   correctAnswers: 0,
   wrongAnswers: 0,
@@ -272,8 +274,35 @@ function sameTopic(
 export async function loadLearningTwinState() {
   const studentId =
     await resolveSlickkStudentId();
-
-  return readState(studentId);
+  const response = await expoFetch(
+    getSlickkApiUrl(`/api/students/${encodeURIComponent(studentId)}/progress`),
+    { headers: { Accept: 'application/json', ...(await getSlickkAuthorizationHeaders()) } }
+  );
+  const payload = (await response.json()) as {
+    profile?: { subjects?: Record<string, unknown>[] };
+    error?: string;
+  };
+  if (!response.ok || !payload.profile) throw new Error(payload.error || 'Slickk could not load verified progress.');
+  const subject = payload.profile.subjects?.[0];
+  if (!subject) return defaultState();
+  const correct = integerValue(subject.correctAnswers, 0);
+  const wrong = integerValue(subject.incorrectAnswers, 0);
+  const evidence = integerValue(subject.masteryEvidence, 0);
+  const serverMastery = finiteNumber(subject.masteryScore, 0);
+  return {
+    topic: textValue(subject.lastTopic, textValue(subject.subject, 'General learning')),
+    skill: textValue(subject.lastSkill, 'Understanding'),
+    misconception: typeof subject.lastMisconception === 'string' ? subject.lastMisconception : '',
+    nextAction: textValue(subject.nextAction, 'Complete a verified learning check.'),
+    mastery: evidence > 0 ? clamp(Math.round(serverMastery * 100)) : 0,
+    confidence: evidence > 0 ? clamp(Math.round(Math.min(1, evidence / 5) * 100)) : 0,
+    attempts: correct + wrong,
+    correctAnswers: correct,
+    wrongAnswers: wrong,
+    hintsUsed: integerValue(subject.hintsUsed, 0),
+    lastAction: (wrong > 0 ? 'wrong' : correct > 0 ? 'correct' : null) as LearningAction | null,
+    updatedAt: textValue(subject.lastStudiedAt, new Date().toISOString()),
+  };
 }
 
 export async function saveTutorLearningTwin(

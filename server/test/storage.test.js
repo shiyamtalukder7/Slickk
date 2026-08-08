@@ -11,6 +11,7 @@ const test = require('node:test');
 const {
   ConversationStoreError,
   createConversationStore,
+  safeLearningText,
   titleFromMessage,
 } = require('../src/storage/conversations');
 
@@ -271,4 +272,81 @@ test('existing learner databases migrate without losing progress', (context) => 
   assert.equal(profile.studentName, 'Legacy Learner');
   assert.equal(profile.totalTurns, 7);
   assert.deepEqual(profile.educationProfile, {});
+});
+
+test('structured Learning Twin text is quarantined', (context) => {
+  assert.equal(
+    safeLearningText(
+      '<?xml version="1.0"?>',
+      ''
+    ),
+    ''
+  );
+  assert.equal(
+    safeLearningText('default', ''),
+    ''
+  );
+
+  const store =
+    createConversationStore(':memory:');
+  context.after(() => store.close());
+  const conversation =
+    store.getOrCreateConversation({
+      studentId: 'student-sanitizer',
+      firstMessage: 'Teach mathematics',
+    });
+
+  const profile = store.recordLearningTurn({
+    studentId: 'student-sanitizer',
+    studentName: 'Student',
+    grade: 'Class 7',
+    language: 'English',
+    conversationId: conversation.id,
+    pedagogyPlan: {
+      subjectKey: 'mathematics',
+      subject: 'Mathematics',
+      focusTopic: 'Division',
+      lessonState: 'feedback',
+      turnKind: 'answer',
+      teachingMove: 'Evaluate the answer.',
+      supportLevel: 0,
+      signals: {
+        confusion: false,
+        understandingClaim: false,
+        answerAttempt: true,
+      },
+      decision: {
+        learningTwinPolicy: {
+          mayCreateMisconception: false,
+        },
+      },
+    },
+    learningTwin: {
+      topic: '<?xml version="1.0"?>',
+      skill: '{"reply":"internal"}',
+      misconception: 'default',
+      nextAction:
+        'MIND_RIGHT_DECISION_DATA={}',
+      confidence: 1,
+      masteryDelta: 0,
+      evidenceVerified: false,
+    },
+  });
+
+  assert.equal(
+    profile.subjects[0].lastTopic,
+    'Division'
+  );
+  assert.equal(
+    profile.subjects[0].lastSkill,
+    'Understanding'
+  );
+  assert.equal(
+    profile.subjects[0].lastMisconception,
+    ''
+  );
+  assert.equal(
+    profile.subjects[0].nextAction,
+    ''
+  );
 });

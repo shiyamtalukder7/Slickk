@@ -84,13 +84,14 @@ async function ocrPdfPages(
   {
     pageNumbers,
     languages = ['eng'],
+    maximumBytes,
     parserFactory = defaultParserFactory,
     workerFactory = defaultWorkerFactory,
     desiredWidth = DEFAULT_OCR_WIDTH,
     onProgress = () => {},
   } = {}
 ) {
-  validatePdfBuffer(buffer);
+  validatePdfBuffer(buffer, maximumBytes);
   const parser = await parserFactory(buffer);
   let worker;
 

@@ -7,6 +7,7 @@ import {
   type ComponentProps,
 } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Platform,
   Pressable,
@@ -23,6 +24,13 @@ import {
   loadStudentProfile,
   type StudentEducationProfile,
 } from '@/services/student-profile';
+import {
+  generateWeeklyAssessment,
+  loadAssessmentHistory,
+  type AssessmentHistoryItem,
+  type WeeklyAssessment,
+} from '@/services/weekly-assessment';
+import { shareWeeklyAssessmentPdf } from '@/services/assessment-pdf';
 
 type IoniconName =
   ComponentProps<typeof Ionicons>['name'];
@@ -41,21 +49,21 @@ const TEST_TOPICS: TestTopic[] = [
     icon: 'leaf-outline',
     subject: 'Biology',
     topic: 'Characteristics of living organisms',
-    readiness: 82,
+    readiness: 0,
   },
   {
     id: 'mathematics',
     icon: 'calculator-outline',
     subject: 'Mathematics',
     topic: 'Fractions and simple equations',
-    readiness: 68,
+    readiness: 0,
   },
   {
     id: 'english',
     icon: 'language-outline',
     subject: 'English',
     topic: 'Reading comprehension and grammar',
-    readiness: 74,
+    readiness: 0,
   },
 ];
 
@@ -68,13 +76,22 @@ export default function WeeklyTestScreen() {
   const [selectedTopics, setSelectedTopics] =
     useState<Record<string, boolean>>({});
 
+  const [assessment, setAssessment] =
+    useState<WeeklyAssessment | null>(null);
+  const [isGenerating, setIsGenerating] =
+    useState(false);
+  const [isExporting, setIsExporting] =
+    useState(false);
+  const [history, setHistory] = useState<AssessmentHistoryItem[]>([]);
+
   useEffect(() => {
     let isMounted = true;
 
-    loadStudentProfile()
-      .then((profile) => {
+    Promise.all([loadStudentProfile(), loadAssessmentHistory()])
+      .then(([profile, savedHistory]) => {
         if (isMounted) {
           setStudentProfile(profile);
+          setHistory(savedHistory);
         }
       })
       .catch((error) => {
@@ -141,6 +158,8 @@ export default function WeeklyTestScreen() {
   }, [studentProfile]);
 
   useEffect(() => {
+    // Topic defaults must be reconciled after the saved student profile loads.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedTopics((current) => {
       const next: Record<string, boolean> = {};
 
@@ -179,7 +198,7 @@ export default function WeeklyTestScreen() {
     }));
   };
 
-  const createTest = () => {
+  const createTest = async () => {
     if (selectedCount === 0) {
       Alert.alert(
         'Choose a topic',
@@ -189,12 +208,26 @@ export default function WeeklyTestScreen() {
       return;
     }
 
-    Alert.alert(
-      'Test preparation ready',
-      `Slickk will generate ${questionCount} questions from ${selectedCount} selected topic${
-        selectedCount === 1 ? '' : 's'
-      } when the test-generation service is connected.`
-    );
+    setIsGenerating(true);
+    try {
+      setAssessment(
+        await generateWeeklyAssessment(
+          questionCount,
+          testTopics
+            .filter((topic) => selectedTopics[topic.id])
+            .map((topic) => topic.subject)
+        )
+      );
+    } catch (error) {
+      Alert.alert(
+        'Test generation failed',
+        error instanceof Error
+          ? error.message
+          : 'Slickk could not generate this test.'
+      );
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const uploadAnswers = () => {
@@ -207,10 +240,27 @@ export default function WeeklyTestScreen() {
     });
   };
 
-  const showExportInfo = (format: string) => {
+  const exportPdf = async () => {
+    if (!assessment) {
+      Alert.alert('Create the test first', 'Generate an adaptive test before exporting its PDF.');
+      return;
+    }
+    setIsExporting(true);
+    try {
+      await shareWeeklyAssessmentPdf(assessment);
+    } catch (error) {
+      Alert.alert('PDF export failed', error instanceof Error ? error.message : 'Slickk could not create this PDF.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const showHistory = () => {
     Alert.alert(
-      `${format} export`,
-      `${format} test export will be connected after the test-generation service is complete.`
+      'Verified test history',
+      history.length
+        ? history.slice(0, 5).map((item) => `${new Date(item.verifiedAt).toLocaleDateString()}: ${item.correct}/${item.total} correct — ${item.title}`).join('\n\n')
+        : 'No educator-verified tests have been completed yet.'
     );
   };
 
@@ -286,7 +336,7 @@ export default function WeeklyTestScreen() {
                 </Text>
 
                 <Text style={styles.heroTitle}>
-                  Build this week's test
+                  Build this week’s test
                 </Text>
               </View>
 
@@ -338,6 +388,31 @@ export default function WeeklyTestScreen() {
               </View>
             </View>
           </View>
+
+          {assessment ? (
+            <>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={styles.eyebrow}>GENERATED TEST</Text>
+                  <Text style={styles.sectionTitle}>{assessment.totalPoints} marks • {assessment.durationMinutes} minutes</Text>
+                </View>
+                <Text style={styles.selectedLabel}>READY</Text>
+              </View>
+
+              <View style={styles.questionPaper}>
+                {assessment.questions.map((question) => (
+                  <View key={question.id} style={styles.questionRow}>
+                    <View style={styles.questionNumber}><Text style={styles.questionNumberText}>{question.number}</Text></View>
+                    <View style={styles.questionCopy}>
+                      <Text style={styles.questionMeta}>{question.subject.toUpperCase()} • {question.kind.replaceAll('-', ' ')}</Text>
+                      <Text style={styles.questionPrompt}>{question.prompt}</Text>
+                      <Text style={styles.questionMarks}>{question.points} marks</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </>
+          ) : null}
 
           <View style={styles.sectionHeader}>
             <View>
@@ -456,7 +531,8 @@ export default function WeeklyTestScreen() {
 
           <View style={styles.outputGrid}>
             <Pressable
-              onPress={() => showExportInfo('PDF')}
+              disabled={isExporting}
+              onPress={() => void exportPdf()}
               style={({ pressed }) => [
                 styles.outputCard,
                 pressed && styles.pressed,
@@ -470,36 +546,10 @@ export default function WeeklyTestScreen() {
                 />
               </View>
 
-              <Text style={styles.outputTitle}>
-                Export PDF
-              </Text>
+              <Text style={styles.outputTitle}>{isExporting ? 'Creating PDF…' : 'Export PDF'}</Text>
 
               <Text style={styles.outputDescription}>
-                Printable question paper
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => showExportInfo('DOCX')}
-              style={({ pressed }) => [
-                styles.outputCard,
-                pressed && styles.pressed,
-              ]}
-            >
-              <View style={styles.outputIcon}>
-                <Ionicons
-                  name="document-text-outline"
-                  size={23}
-                  color="#70F7D4"
-                />
-              </View>
-
-              <Text style={styles.outputTitle}>
-                Export DOCX
-              </Text>
-
-              <Text style={styles.outputDescription}>
-                Editable test document
+                Test paper and educator rubric
               </Text>
             </Pressable>
 
@@ -528,12 +578,7 @@ export default function WeeklyTestScreen() {
             </Pressable>
 
             <Pressable
-              onPress={() =>
-                Alert.alert(
-                  'Test history',
-                  'Completed test results and grading reports will appear here.'
-                )
-              }
+              onPress={showHistory}
               style={({ pressed }) => [
                 styles.outputCard,
                 pressed && styles.pressed,
@@ -573,7 +618,7 @@ export default function WeeklyTestScreen() {
 
               <Text style={styles.gradingDescription}>
                 Results will update the Learning Twin,
-                revision topics and next week's routine.
+                revision topics and next week’s routine.
               </Text>
             </View>
           </View>
@@ -593,24 +638,25 @@ export default function WeeklyTestScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Create weekly test"
-            onPress={createTest}
+            disabled={questionCount === 0 || isGenerating}
+            onPress={() => void createTest()}
             style={({ pressed }) => [
               styles.createButton,
-              questionCount === 0 &&
+              (questionCount === 0 || isGenerating) &&
                 styles.createButtonDisabled,
               pressed &&
                 questionCount > 0 &&
                 styles.buttonPressed,
             ]}
           >
-            <Ionicons
-              name="sparkles"
-              size={21}
-              color="#081426"
-            />
+            {isGenerating ? (
+              <ActivityIndicator size="small" color="#081426" />
+            ) : (
+              <Ionicons name="sparkles" size={21} color="#081426" />
+            )}
 
             <Text style={styles.createButtonText}>
-              Create {questionCount || ''} question test
+              {isGenerating ? 'Building adaptive test…' : `Create ${questionCount || ''} question test`}
             </Text>
           </Pressable>
         </View>
@@ -889,6 +935,63 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 2,
     backgroundColor: '#70F7D4',
+  },
+
+  questionPaper: {
+    overflow: 'hidden',
+    borderRadius: 20,
+    backgroundColor: '#0C192A',
+    borderWidth: 1,
+    borderColor: '#1D3048',
+  },
+
+  questionRow: {
+    padding: 15,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 11,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#29405A',
+  },
+
+  questionNumber: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#173C3A',
+  },
+
+  questionNumberText: {
+    color: '#70F7D4',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  questionCopy: {
+    flex: 1,
+  },
+
+  questionMeta: {
+    color: '#70F7D4',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+
+  questionPrompt: {
+    marginTop: 5,
+    color: '#E8EEF7',
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '700',
+  },
+
+  questionMarks: {
+    marginTop: 5,
+    color: '#71849B',
+    fontSize: 9,
   },
 
   outputGrid: {

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import {
   useEffect,
   useState,
@@ -25,9 +25,9 @@ import {
   clearSlickkApiToken,
   hasSlickkApiToken,
   loadSlickkSession,
-  saveSlickkApiToken,
   SlickkCredentialError,
   type SlickkSessionIdentity,
+  verifyAndSaveSlickkApiToken,
 } from '@/services/api-auth';
 
 type AccessState =
@@ -140,22 +140,10 @@ export default function ServerAccessScreen() {
     setState('saving');
 
     try {
-      await saveSlickkApiToken(
-        normalizedToken
-      );
-
       const verifiedSession =
-        await loadSlickkSession(true);
-
-      if (
-        verifiedSession.role !== 'student' &&
-        verifiedSession.role !== 'local'
-      ) {
-        throw new SlickkCredentialError(
-          'This key is not assigned to a student account.',
-          'STUDENT_SESSION_REQUIRED'
+        await verifyAndSaveSlickkApiToken(
+          normalizedToken
         );
-      }
 
       setToken('');
       setHasStoredToken(true);
@@ -167,10 +155,6 @@ export default function ServerAccessScreen() {
 
       setState('ready');
     } catch (saveError) {
-      await clearSlickkApiToken();
-
-      setHasStoredToken(false);
-      setSession(null);
       setError(
         accessErrorMessage(saveError)
       );
@@ -207,7 +191,13 @@ export default function ServerAccessScreen() {
       ? 'Student account'
       : session?.role === 'local'
         ? 'Local development'
-        : 'Not connected';
+        : session?.role === 'teacher'
+          ? 'Teacher account'
+          : session?.role === 'school-admin'
+            ? 'School administrator'
+            : session?.role === 'guardian'
+              ? 'Parent or guardian'
+              : 'Not connected';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -269,7 +259,7 @@ export default function ServerAccessScreen() {
 
           <Text style={styles.description}>
             Add the access key issued for this
-            student. The key is stored in Android
+            account. The key is stored in Android
             secure storage and is never included in
             the application source code.
           </Text>
@@ -316,7 +306,7 @@ export default function ServerAccessScreen() {
                 style={styles.statusDescription}
               >
                 {session
-                  ? `Student ID: ${session.subjectId}`
+                  ? `Account ID: ${session.subjectId}`
                   : hasStoredToken
                     ? 'A saved key could not be verified.'
                     : 'No online access key is saved.'}
@@ -324,9 +314,23 @@ export default function ServerAccessScreen() {
             </View>
           </View>
 
+          {session &&
+          ['teacher', 'school-admin', 'local'].includes(session.role) ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open educator review workspace"
+              onPress={() => router.push('/educator-review' as Href)}
+              style={styles.educatorButton}
+            >
+              <Ionicons name="school-outline" size={21} color="#70F7D4" />
+              <Text style={styles.educatorButtonText}>Open educator review workspace</Text>
+              <Ionicons name="chevron-forward" size={20} color="#70F7D4" />
+            </Pressable>
+          ) : null}
+
           <View style={styles.formCard}>
             <Text style={styles.fieldLabel}>
-              STUDENT ACCESS KEY
+              ACCOUNT ACCESS KEY
             </Text>
 
             <View style={styles.inputRow}>
@@ -342,7 +346,7 @@ export default function ServerAccessScreen() {
                 placeholder={
                   hasStoredToken
                     ? 'Enter a replacement access key'
-                    : 'Paste the student access key'
+                    : 'Paste the account access key'
                 }
                 placeholderTextColor="#66738A"
                 style={styles.input}
@@ -435,7 +439,7 @@ export default function ServerAccessScreen() {
           >
             <Text style={styles.saveButtonText}>
               {state === 'saving'
-                ? 'Verifying access key?'
+                ? 'Verifying access key…'
                 : hasStoredToken
                   ? 'Replace and verify key'
                   : 'Save and verify key'}
@@ -624,6 +628,26 @@ const styles = StyleSheet.create({
     color: '#8293A8',
     fontSize: 12,
     lineHeight: 18,
+  },
+
+  educatorButton: {
+    minHeight: 54,
+    marginTop: 14,
+    paddingHorizontal: 16,
+    borderRadius: 17,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    backgroundColor: '#102237',
+    borderWidth: 1,
+    borderColor: '#24506A',
+  },
+
+  educatorButtonText: {
+    flex: 1,
+    color: '#E8FFF9',
+    fontSize: 14,
+    fontWeight: '800',
   },
 
   formCard: {

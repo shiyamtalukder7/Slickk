@@ -49,7 +49,13 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
       response.setHeader('Content-Type', 'application/json');
       response.end(
         JSON.stringify({
-          models: [{ name: 'slickk-tutor-3b-backup:latest' }],
+          models: [
+            {
+              name:
+                require('../src/config')
+                  .config.modelName,
+            },
+          ],
         })
       );
       return;
@@ -65,13 +71,13 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
         );
         response.write(
           `${JSON.stringify({
-            message: { content: 'Seven' },
+            message: { content: 'Twelve minus five equals seven. For example, ' },
             done: false,
           })}\n`
         );
         response.write(
           `${JSON.stringify({
-            message: { content: ' apples remain.' },
+            message: { content: 'if you have twelve apples and remove five, seven apples remain. What is thirteen minus five?' },
             done: false,
           })}\n`
         );
@@ -96,13 +102,13 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
           message: {
             role: 'assistant',
             content: JSON.stringify({
-              reply: 'Two plus two equals four.',
-              topic: 'Arithmetic',
-              skill: 'Addition',
+              reply: 'Two plus two equals four. For example, two counters plus two more counters make four counters. The addition sentence is two plus two equals four. What is three plus two?',
+              topic: 'Addition',
+              skill: 'Building an addition connection',
               misconception: '',
               nextAction: 'What is three plus two?',
               confidence: 0.8,
-              masteryDelta: 1,
+              masteryDelta: 0,
             }),
           },
           done: true,
@@ -201,6 +207,7 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
       conversationStore,
       curriculumStore,
       schoolStore,
+      apiCredentials: [],
     })
   );
   const gatewayPort = await listen(gateway);
@@ -371,8 +378,11 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
   const conversationId = tutor.metadata.conversationId;
 
   assert.equal(tutorResponse.status, 200);
-  assert.equal(tutor.reply, 'Two plus two equals four.');
-  assert.equal(tutor.learningTwin.topic, 'Arithmetic');
+  assert.equal(
+    tutor.reply,
+    'Two plus two equals four. For example, two counters plus two more counters make four counters. The addition sentence is two plus two equals four. What is three plus two?'
+  );
+  assert.equal(tutor.learningTwin.topic, 'Addition');
   assert.match(conversationId, /^[0-9a-f-]{36}$/i);
 
   const streamResponse = await fetch(
@@ -401,13 +411,21 @@ test('gateway streams and persists the mobile tutor contract', async (context) =
       .filter((event) => event.type === 'token')
       .map((event) => event.content)
       .join(''),
-    'Seven apples remain.'
+    'Twelve minus five equals seven. For example, if you have twelve apples and remove five, seven apples remain. What is thirteen minus five?'
   );
   assert.equal(
     streamEvents.at(-1).conversationId,
     conversationId
   );
   assert.equal(streamEvents.at(-1).type, 'complete');
+  assert.equal(
+    streamEvents.at(-1).learningTwin.topic,
+    'Subtraction'
+  );
+  assert.equal(
+    streamEvents.at(-1).learningTwin.misconception,
+    ''
+  );
   assert.equal(
     streamEvents.at(-1).citations[0].documentTitle,
     'Primary Mathematics'

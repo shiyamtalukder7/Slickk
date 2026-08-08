@@ -282,16 +282,135 @@ function detectSubject(message, history = [], explicitSubject = 'Auto') {
   return SUBJECT_PLAYBOOKS[bestKey];
 }
 
-function lastTutorMessage(history) {
-  return [...history]
-    .reverse()
-    .find((message) => message.role === 'tutor');
+const EXPLICIT_LEARNING_REQUEST_PATTERN =
+  /\b(explain|teach|show me|tell me about|what is|what does|how does|how do|why|define|help me|learn about|meaning of)\b/i;
+const PRACTICE_REQUEST_PATTERN =
+  /\b(?:give|ask|show)\s+me\b[\s\S]{0,80}\b(?:question|problem|exercise)\b|\bquiz\s+me\b|\bpractice\b[\s\S]{0,80}\b(?:question|problem|exercise)\b/i;
+
+function focusTopicFor(
+  message,
+  activeQuestion,
+  subject
+) {
+  const text = String(
+    activeQuestion || message || ''
+  );
+
+  const topics = [
+    ['Division', /\b(?:division|divide|divided|quotient)\b|÷|\//i],
+    ['Multiplication', /\b(?:multiplication|multiply|times|product)\b|×|\*/i],
+    ['Addition', /\b(?:addition|add|plus|sum)\b|\+/i],
+    ['Subtraction', /\b(?:subtraction|subtract|minus|difference)\b/i],
+    ['Fractions', /\bfractions?\b/i],
+    ['Algebra', /\balgebra|equations?\b/i],
+    ['Place Value', /\bplace\s+value\b/i],
+  ];
+
+  for (const [label, pattern] of topics) {
+    if (pattern.test(text)) {
+      return label;
+    }
+  }
+
+  const numberMatch = text.match(
+    /\bnumber\s+([+-]?\d+(?:\.\d+)?)\b/i
+  );
+
+  if (numberMatch) {
+    return `Number ${numberMatch[1]}`;
+  }
+
+  return subject?.label || 'General learning';
 }
 
-function detectTurnKind(message, history = []) {
+function messageText(message) {
+  return String(
+    message?.text ||
+    message?.content ||
+    ''
+  ).trim();
+}
+
+function lastConversationMessage(history = []) {
+  return history.length > 0
+    ? history[history.length - 1]
+    : null;
+}
+
+function activeTutorQuestion(history = []) {
+  const latest = lastConversationMessage(history);
+
+  if (!latest || latest.role !== 'tutor') {
+    return '';
+  }
+
+  const text = messageText(latest);
+
+  return /\?\s*$/u.test(text)
+    ? text
+    : '';
+}
+
+function isAmbiguousShortMessage(message) {
   const cleanMessage = String(message || '').trim();
 
-  if (CONFUSION_PATTERN.test(cleanMessage)) {
+  if (
+    !cleanMessage ||
+    cleanMessage.length > 32 ||
+    QUESTION_PATTERN.test(cleanMessage) ||
+    EXPLICIT_LEARNING_REQUEST_PATTERN.test(cleanMessage)
+  ) {
+    return false;
+  }
+
+  if (
+    /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*[/:]\s*\d+(?:\.\d+)?)?$/u.test(
+      cleanMessage
+    )
+  ) {
+    return true;
+  }
+
+  const words = cleanMessage
+    .split(/\s+/u)
+    .filter(Boolean);
+
+  return words.length <= 2;
+}
+
+function isExplicitConfusionMessage(message) {
+  const text = String(message || '')
+    .normalize('NFKC')
+    .replace(/\u0000/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  const compact = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+
+  return (
+    CONFUSION_PATTERN.test(text) ||
+    /\b(?:i\s+)?(?:still\s+)?(?:do\s+not|don't|dont|cannot|can't|cant)\s+understand(?:\b|(?=the\b))/i.test(
+      text
+    ) ||
+    /^(?:i)?(?:still)?(?:donot|dont|cannot|cant)understand(?:the|this|that|it|why|how|what|number|concept|topic|idea|lesson|example|problem|question|$)/iu.test(
+      compact
+    )
+  );
+}
+
+function detectTurnKind(
+  message,
+  history = [],
+  { hasVerifiedMaterial = false } = {}
+) {
+  const cleanMessage = String(message || '').trim();
+
+  if (
+    isExplicitConfusionMessage(
+      cleanMessage
+    )
+  ) {
     return 'confusion';
   }
 
@@ -299,17 +418,44 @@ function detectTurnKind(message, history = []) {
     return 'confirmation';
   }
 
-  const previousTutor = lastTutorMessage(history);
-  const followsTutorQuestion =
-    previousTutor &&
-    /\?\s*$/.test(String(previousTutor.text || previousTutor.content || ''));
+  if (
+    PRACTICE_REQUEST_PATTERN.test(
+      cleanMessage
+    )
+  ) {
+    return 'practice_request';
+  }
 
   if (
-    followsTutorQuestion &&
+    EXPLICIT_LEARNING_REQUEST_PATTERN.test(
+      cleanMessage
+    )
+  ) {
+    return history.length === 0
+      ? 'new_topic'
+      : 'question';
+  }
+
+  const activeQuestion =
+    activeTutorQuestion(history);
+
+  if (
+    activeQuestion &&
     cleanMessage.length <= 500 &&
     !QUESTION_PATTERN.test(cleanMessage)
   ) {
     return 'answer';
+  }
+
+  if (
+    hasVerifiedMaterial &&
+    isAmbiguousShortMessage(cleanMessage)
+  ) {
+    return 'material_answer';
+  }
+
+  if (isAmbiguousShortMessage(cleanMessage)) {
+    return 'clarification';
   }
 
   if (history.length === 0) {
@@ -356,7 +502,18 @@ function lessonStateFor(turnKind, relevantMemory) {
     return 'teach_back';
   }
 
-  if (turnKind === 'answer') {
+  if (turnKind === 'clarification') {
+    return 'clarify_context';
+  }
+
+  if (turnKind === 'practice_request') {
+    return 'guided_practice';
+  }
+
+  if (
+    turnKind === 'answer' ||
+    turnKind === 'material_answer'
+  ) {
     return 'feedback';
   }
 
@@ -373,6 +530,8 @@ function lessonStateFor(turnKind, relevantMemory) {
 
 function teachingMoveFor(lessonState) {
   const moves = {
+    clarify_context:
+      'Ask one short question to learn what the message refers to. Do not infer a topic, answer, upload, or misconception.',
     prior_knowledge_check:
       'Ask one easy diagnostic question before assuming the student’s level.',
     explanation:
@@ -394,7 +553,15 @@ function createTutorPlan({
   requestData,
   history = [],
   learnerProfile,
+  sessionAdaptation,
 }) {
+  const verifiedMaterialContext = Boolean(
+    requestData.materialContext?.verified === true &&
+    Array.isArray(
+      requestData.materialContext?.materialIds
+    ) &&
+    requestData.materialContext.materialIds.length > 0
+  );
   const subject = detectSubject(
     requestData.message,
     history,
@@ -402,7 +569,20 @@ function createTutorPlan({
   );
   const turnKind = detectTurnKind(
     requestData.message,
-    history
+    history,
+    {
+      hasVerifiedMaterial:
+        verifiedMaterialContext,
+    }
+  );
+  const activeQuestion =
+    activeTutorQuestion(history);
+  const focusTopic = focusTopicFor(
+    requestData.message,
+    turnKind === 'answer'
+      ? activeQuestion
+      : '',
+    subject
   );
   const relevantMemory = selectRelevantMemory(
     learnerProfile,
@@ -429,8 +609,13 @@ function createTutorPlan({
     subjectFamily:
       subject.family || subject.key,
     subject: subject.label,
+    focusTopic,
     turnKind,
     lessonState,
+    activeQuestion,
+    needsClarification:
+      turnKind === 'clarification',
+    verifiedMaterialContext,
     teachingMove: teachingMoveFor(lessonState),
     subjectMethod: subject.method,
     evidenceCheck: subject.evidenceCheck,
@@ -444,18 +629,29 @@ function createTutorPlan({
     signals: {
       confusion: turnKind === 'confusion',
       understandingClaim: turnKind === 'confirmation',
-      answerAttempt: turnKind === 'answer',
+      answerAttempt:
+        turnKind === 'answer' ||
+        turnKind === 'material_answer',
+      needsClarification:
+        turnKind === 'clarification',
+      practiceRequest:
+        turnKind === 'practice_request',
     },
     relevantMemory,
+    sessionAdaptation: sessionAdaptation || null,
   };
 }
 
 module.exports = {
   GRADE_BANDS,
   SUBJECT_PLAYBOOKS,
+  activeTutorQuestion,
   createTutorPlan,
   detectSubject,
   detectTurnKind,
   gradeBandFor,
+  focusTopicFor,
+  isAmbiguousShortMessage,
+  PRACTICE_REQUEST_PATTERN,
   selectRelevantMemory,
 };

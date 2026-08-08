@@ -1,0 +1,30 @@
+services:
+  slickk-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      SLICKK_DATABASE_PATH: /data/slickk.db
+      SLICKK_MODEL_PROVIDER: ollama
+      SLICKK_MODEL_URL: ${SLICKK_MODEL_URL:?Set the private Ollama service URL}
+      SLICKK_MODEL_NAME: ${SLICKK_MODEL_NAME:-slickk-tutor-3b-backup}
+      SLICKK_API_KEYS_JSON: ${SLICKK_API_KEYS_JSON:?Set role-bound API credentials}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
+      TRUST_PROXY: "true"
+    ports:
+      - "3000:3000"
+    volumes:
+      - slickk-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  slickk-data:

@@ -15,6 +15,19 @@ const historyMessageSchema = z.object({
   text: z.string().trim().min(1).max(4000),
 });
 
+const materialContextSchema = z.object({
+  verified: z.boolean().default(false),
+  materialIds: z
+    .array(
+      z.string().trim().min(1).max(120)
+    )
+    .max(10)
+    .default([]),
+}).default({
+  verified: false,
+  materialIds: [],
+});
+
 const tutorRequestSchema = z.object({
   message: z.string().trim().min(1).max(12000),
   studentName: z.string().trim().min(1).max(80).default('Student'),
@@ -34,6 +47,7 @@ const tutorRequestSchema = z.object({
     .array(historyMessageSchema)
     .max(30)
     .default([]),
+  materialContext: materialContextSchema,
 });
 
 const TUTOR_RESULT_JSON_SCHEMA = {
@@ -82,6 +96,28 @@ const TUTOR_RESULT_JSON_SCHEMA = {
     'masteryDelta',
   ],
 };
+
+
+const TUTOR_REPAIR_RESULT_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    reply: {
+      type: 'string',
+      minLength: 1,
+      description:
+        'The complete repaired student-facing teaching response. ' +
+        'Put all teaching content in this field. ' +
+        'Follow the runtime repair instructions exactly. ' +
+        'Do not return topic, skill, misconception, nextAction, ' +
+        'confidence, masteryDelta, or other metadata.',
+    },
+  },
+  required: [
+    'reply',
+  ],
+};
+
 
 function formatIssues(issues) {
   return issues.map((issue) => ({
@@ -146,9 +182,114 @@ function clampNumber(value, minimum, maximum, fallback) {
   return Math.min(maximum, Math.max(minimum, parsed));
 }
 
+function decodeJsonStringFragment(fragment) {
+  try {
+    return JSON.parse(`"${fragment}"`);
+  } catch {
+    return String(fragment || '')
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\')
+      .trim();
+  }
+}
+
+function extractReplyFromStructuredText(rawText) {
+  const text = String(rawText ?? '')
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .trim();
+  const match = /["']reply["']\s*:\s*"/i.exec(text);
+
+  if (!match) {
+    return '';
+  }
+
+  let escaped = false;
+  let fragment = '';
+
+  for (
+    let index = match.index + match[0].length;
+    index < text.length;
+    index += 1
+  ) {
+    const character = text[index];
+
+    if (escaped) {
+      fragment += `\\${character}`;
+      escaped = false;
+      continue;
+    }
+
+    if (character === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (character === '"') {
+      break;
+    }
+
+    fragment += character;
+  }
+
+  return decodeJsonStringFragment(fragment);
+}
+
+function sanitizeTutorReply(rawText, fallback = '') {
+  const text = String(rawText ?? '')
+    .replace(/\u0000/g, '')
+    .trim();
+
+  if (!text) {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(cleanJsonText(text));
+
+    if (typeof parsed === 'string') {
+      return parsed.trim() || fallback;
+    }
+
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      typeof parsed.reply === 'string'
+    ) {
+      return parsed.reply.trim() || fallback;
+    }
+  } catch {
+    const extracted =
+      extractReplyFromStructuredText(text);
+
+    if (extracted) {
+      return extracted;
+    }
+  }
+
+  if (
+    /^\s*(?:\{|\[|```)/u.test(text) ||
+    /["']reply["']\s*:/i.test(text)
+  ) {
+    return fallback;
+  }
+
+  return text;
+}
+
 function safelyParseTutorResult(rawText) {
   const fallbackReply =
-    limitedText(rawText, 'Please ask your question another way.', 8000);
+    limitedText(
+      sanitizeTutorReply(
+        rawText,
+        'Please ask your question another way.'
+      ),
+      'Please ask your question another way.',
+      8000
+    );
 
   try {
     const parsed = JSON.parse(cleanJsonText(rawText));
@@ -195,8 +336,10 @@ function safelyParseTutorResult(rawText) {
 
 module.exports = {
   TUTOR_RESULT_JSON_SCHEMA,
+  TUTOR_REPAIR_RESULT_JSON_SCHEMA,
   cleanJsonText,
   parseTutorRequest,
   safelyParseTutorResult,
+  sanitizeTutorReply,
   tutorModes,
 };

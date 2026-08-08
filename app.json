@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "slickk",
+    "name": "SLICKK",
     "slug": "slickk",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -45,6 +45,13 @@
         }
       ],
       "expo-audio",
+      [
+        "expo-notifications",
+        {
+          "color": "#70F7D4",
+          "defaultChannel": "learning-routine"
+        }
+      ],
       "expo-asset",
       [
         "expo-camera",
@@ -54,7 +61,8 @@
           "barcodeScannerEnabled": false
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,
